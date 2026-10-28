@@ -41,7 +41,7 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
 | `tools/gen_assets.py`, `assets/tex`, `assets/sfx` | Repris tels quels (déjà dans le dépôt). Sable ajouté par `tools/gen_island.py`. |
 | Construction des niveaux en code (`level.gd` : `box`, `wall`, `merge_static`) | Repris et étendus dans `scripts/ile.gd` (étages, rampes, toits, hangars, bunkers…). |
 | Commandes manette / clavier / tactile (`game.gd`, `touch_controls.gd`) | Base reprise ; boutons propres au BR à ajouter (glissade, parachute, ping, carte). |
-| Joueur (`player.gd`), vues d'armes (`weapon_view.gd`, `gun_shapes.gd`), tirs | À porter au jalon 1–2 : on garde le ressenti des armes et l'ADS. |
+| Vues d'armes (`weapon_view.gd`, `gun_shapes.gd`), tirs | À porter au jalon 2 : on garde le ressenti des armes et l'ADS. Le joueur, lui, a été réécrit au jalon 1 (`joueur.gd`). |
 | Bots de test (`--bot --god`), tests automatiques en CI | Même principe : `--check` existe déjà, on ajoutera des tests par jalon. |
 | CI GitHub Actions → APK publié en release | En place (`.github/workflows/build.yml`). |
 | Rendu Compatibility pour GPU Mali | Gardé : l'APK doit tourner sur le Poco X8 Pro à 60 i/s. |
@@ -51,14 +51,30 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
 | # | Jalon | Contenu | Fini quand |
 |---|---|---|---|
 | **0** | **Carte** ✅ | Île du Lazaret générée (relief, 10 lieux, bâtiments à étages, végétation), carte tactique, visite à pied et en drone, tests automatiques, APK. | L'APK installé permet de visiter l'île à la manette et au tactile. |
-| 1 | Mouvement | Contrôleur du joueur : sprint, sprint tactique, glissade + **cancel slide**, escalade de rebords, accroupi / couché, **parachute** et saut d'avion, redéploiement depuis un point haut. | Test auto : un bot enchaîne glissade + annulation et garde sa vitesse ; saut d'avion → atterrissage sur un lieu choisi. |
+| **1** | **Mouvement** ✅ | Contrôleur du joueur : sprint, sprint tactique, glissade + **cancel slide**, saut de glissade, escalade de rebords, accroupi / couché, **parachute** (ouvrir, couper, rouvrir, ouverture auto) et saut d'avion, redéploiement depuis un point haut. Menu pause : taille de l'interface, marges, zone sûre, sensibilités. | Tests auto : glissade + annulation garde la vitesse et recharge le sprint tactique ; escalade d'un conteneur ; saut d'avion → atterrissage sur l'île. |
 | 2 | Armes et combat | Portage des armes de Dernière Vague (adaptées au PvP), plaques d'armure, dégâts par zone, munitions au sol, coffres. | Duel contre une cible mobile, armure qui se casse, butin qui se ramasse. |
 | 3 | Règles Résurgence | La Brume en 6 phases, réapparition en parachute, argent, **stations d'achat**, **loadouts au lobby** et largages de classe. | Une partie complète jouable seul (sans bots) du saut à la fin de la Brume. |
 | 4 | Bots | IA : choisir un lieu, piller, se déplacer avec la zone, combattre (portée, couverture), acheter en station. Niveaux de difficulté. | Partie de 24 combattants qui se termine sans blocage en test automatique. |
 | 5 | Mobile | Interface tactile complète, réglages, performances (objectif 60 i/s, < 300 appels de dessin), sons, menus, progression. | Partie fluide sur le Poco X8 Pro, manette GameSir et tactile. |
 | 6 | Multijoueur | Serveur autoritaire Godot sans écran hébergé sur ton serveur, lobby, synchronisation (prédiction côté client), bots pour compléter les parties. | Partie à plusieurs téléphones + bots. |
 
-## 5. Choix techniques
+## 5. Réglages du mouvement (jalon 1)
+
+Toutes les valeurs sont des constantes en tête de `scripts/joueur.gd`, faciles à ajuster après
+essai sur le téléphone.
+
+| | Valeur |
+|---|---|
+| Marche / sprint / sprint tactique | 4,6 / 6,9 / 8,6 m/s (tactique : 3,5 s, recharge 8 s) |
+| Accroupi / couché | 2,6 / 1,1 m/s (maintenir accroupi 0,4 s = couché) |
+| Glissade | +2,4 m/s d'élan (max 11), freinage 7 m/s² après 0,2 s, accélère dans les descentes |
+| Cancel slide | possible après 0,12 s ; on se relève en sprint avec l'élan, sprint tactique rechargé ; l'élan retombe de 3 m/s² |
+| Escalade | rebords de 0,5 à 2,8 m |
+| Chute libre | 26 à 52 m/s (regarder vers le bas pour plonger), 22 m/s à l'horizontale |
+| Parachute | descente 6 m/s (pousser : plus vite), ouverture auto à 40 m (12 m si on l'a coupé) |
+| Avion | 190 m d'altitude, 48 m/s, trajet tiré au sort, éjection en bout d'île |
+
+## 6. Choix techniques
 
 - **Godot 4.6**, rendu *Compatibility* (GL ES 3), Android arm64 — comme Dernière Vague.
 - **L'île vient de données** : `data/ile.json` décrit les masses de terre, collines, routes, lieux,
@@ -66,11 +82,11 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
   la carte ; le jeu reconstruit les bâtiments à partir du même fichier. Modifier l'île = modifier
   le JSON puis relancer le script.
 - **Pas de navigation pré-calculée au jalon 0** : elle viendra avec les bots (navmesh par zones).
-- **Multijoueur** : API réseau haut niveau de Godot (ENet), serveur autoritaire ; l'architecture
-  du jalon 1 sépare déjà « intentions du joueur » et « simulation » pour que les bots et les
-  joueurs distants passent par le même chemin.
+- **Multijoueur** : API réseau haut niveau de Godot (ENet), serveur autoritaire. Depuis le jalon 1,
+  la simulation du joueur (`joueur.gd`) lit une structure `Intentions` (`intentions.gd`) : manette,
+  clavier, tactile, bots de test et, plus tard, joueurs distants passent par le même chemin.
 
-## 6. Questions ouvertes
+## 7. Questions ouvertes
 
 - Taille des équipes au lancement : solo seulement, ou duo/trio avec des bots coéquipiers ?
 - Nombre de combattants par partie (24 ? 32 ?) — à confirmer avec les performances.

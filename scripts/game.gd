@@ -1,7 +1,9 @@
 extends Node
-## Global (autoload « G ») : couches de collision, commandes, mode d'entrée, sons, options de lancement.
+## Global (autoload « G ») : couches de collision, commandes, mode d'entrée, réglages, sons,
+## options de lancement.
 
 signal input_mode_changed(mode: String)
+signal settings_changed
 
 const L_WORLD := 1
 const L_PLAYER := 2
@@ -11,6 +13,17 @@ var tour_mode := false
 var check_mode := false
 var screenshot_dir := ""
 var data: Dictionary = {}
+
+## Réglages du joueur, enregistrés dans user://settings.cfg.
+var settings := {
+	"hud_scale": 1.0,       # taille de l'interface (0,7 à 1,5)
+	"hud_margin": 0.03,     # marge ajoutée sur les bords, en part de la largeur de l'écran
+	"sens_pad": 1.0,
+	"sens_touch": 1.0,
+	"sens_mouse": 1.0,
+	"show_fps": true,
+}
+const SETTINGS_PATH := "user://settings.cfg"
 
 var _sounds := {}
 var _players: Array[AudioStreamPlayer] = []
@@ -29,6 +42,8 @@ func _ready() -> void:
 			screenshot_dir = a.substr(8)
 	data = load_json("res://data/ile.json")
 	_setup_input()
+	if not check_mode:
+		_load_settings()
 	for i in 6:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -64,6 +79,32 @@ func where(p: Vector3) -> String:
 
 
 # ------------------------------------------------------------------------------------------------
+# Réglages
+# ------------------------------------------------------------------------------------------------
+func set_setting(key: String, value) -> void:
+	settings[key] = value
+	save_settings()
+	settings_changed.emit()
+
+
+func _load_settings() -> void:
+	var cf := ConfigFile.new()
+	if cf.load(SETTINGS_PATH) != OK:
+		return
+	for k in settings:
+		settings[k] = cf.get_value("reglages", k, settings[k])
+
+
+func save_settings() -> void:
+	if check_mode:
+		return
+	var cf := ConfigFile.new()
+	for k in settings:
+		cf.set_value("reglages", k, settings[k])
+	cf.save(SETTINGS_PATH)
+
+
+# ------------------------------------------------------------------------------------------------
 # Sons (ceux de Dernière Vague)
 # ------------------------------------------------------------------------------------------------
 func sound(name: String) -> AudioStream:
@@ -86,7 +127,9 @@ func play(name: String, volume_db := 0.0, pitch := 1.0) -> void:
 
 
 # ------------------------------------------------------------------------------------------------
-# Commandes : clavier / souris, manette (n'importe quel numéro de manette), tactile à part
+# Commandes : clavier / souris, manette (n'importe quel numéro de manette), tactile à part.
+# Disposition de la manette proche de Warzone : A sauter, B accroupi (maintenir = couché),
+# L3 sprint (encore L3 en sprintant = sprint tactique), Select carte, Start pause.
 # ------------------------------------------------------------------------------------------------
 func _add(action: String, deadzone := 0.2) -> void:
 	if not InputMap.has_action(action):
@@ -133,13 +176,19 @@ func _setup_input() -> void:
 	_axis("look_down", JOY_AXIS_RIGHT_Y, 1.0)
 	_add("jump"); _key("jump", KEY_SPACE); _btn("jump", JOY_BUTTON_A)
 	_add("sprint"); _key("sprint", KEY_SHIFT); _btn("sprint", JOY_BUTTON_LEFT_STICK)
-	_add("descend"); _key("descend", KEY_C); _key("descend", KEY_CTRL); _btn("descend", JOY_BUTTON_B)
-	_add("drone"); _key("drone", KEY_F); _btn("drone", JOY_BUTTON_Y)
+	_add("crouch"); _key("crouch", KEY_C); _key("crouch", KEY_CTRL); _btn("crouch", JOY_BUTTON_B)
+	_add("drone"); _key("drone", KEY_F)
 	_add("carte"); _key("carte", KEY_M); _key("carte", KEY_TAB); _btn("carte", JOY_BUTTON_BACK)
-	_add("pause"); _key("pause", KEY_ESCAPE); _btn("pause", JOY_BUTTON_START)
+	_add("pause"); _key("pause", KEY_ESCAPE); _key("pause", KEY_P); _btn("pause", JOY_BUTTON_START)
 	# Les claviers AZERTY : ZQSD en plus de WASD.
 	_key("move_forward", KEY_Z)
 	_key("move_left", KEY_Q)
+	# Menus : A valide et B revient, quel que soit le numéro de la manette.
+	_btn("ui_accept", JOY_BUTTON_A)
+	_btn("ui_cancel", JOY_BUTTON_B)
+	for pair in [["ui_up", JOY_BUTTON_DPAD_UP], ["ui_down", JOY_BUTTON_DPAD_DOWN],
+			["ui_left", JOY_BUTTON_DPAD_LEFT], ["ui_right", JOY_BUTTON_DPAD_RIGHT]]:
+		_btn(pair[0], pair[1])
 
 
 func _input(event: InputEvent) -> void:
