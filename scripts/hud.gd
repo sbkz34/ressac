@@ -10,7 +10,12 @@ extends CanvasLayer
 
 signal request_plane
 signal request_visit
+signal request_lobby
+signal request_settings_closed
 
+var mode := "lobby"            # "lobby", "partie" ou "entrainement" : change le menu pause
+var partie: Partie
+var pillage: Pillage
 var player: Joueur
 var touch: TouchControls
 var avion: Avion
@@ -32,6 +37,17 @@ var _pause: Control
 var _pause_box: VBoxContainer
 var _drone_btn: Button
 var _first_button: Button
+var _plane_btn: Button
+var _visit_btn: Button
+var _lobby_btn: Button
+var _brume_lbl: Label
+var _respawn_lbl: Label
+var _gas: ColorRect
+var _panel: Control
+var _panel_box: VBoxContainer
+var _panel_kind := ""
+var _station: Node3D
+var _crate: Coffre
 
 
 func _ready() -> void:
@@ -101,6 +117,17 @@ func _ready() -> void:
 	_notice.offset_right = 400
 	_notice.offset_top = 100
 	_notice.offset_bottom = 128
+	_brume_lbl = _label(_frame, 19, Color(0.85, 0.95, 0.6))
+	_brume_lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_brume_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_brume_lbl.offset_top = 68
+	_respawn_lbl = _label(_frame, 34, Color(1, 0.9, 0.6))
+	_respawn_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_respawn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_respawn_lbl.offset_left = -500
+	_respawn_lbl.offset_right = 500
+	_respawn_lbl.offset_top = -40
+	_respawn_lbl.offset_bottom = 10
 	_help = _label(_frame, 17, Color(1, 1, 1, 0.8))
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_help.offset_top = -30
@@ -113,6 +140,12 @@ func _ready() -> void:
 	touch.map_pressed.connect(toggle_map)
 	touch.pause_pressed.connect(open_pause)
 
+	_gas = ColorRect.new()
+	_gas.color = Color(0.72, 0.8, 0.35, 0.0)
+	_gas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_gas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_gas)
+	move_child(_gas, 0)
 	_cross = Crosshair.new()
 	_cross.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -122,6 +155,7 @@ func _ready() -> void:
 	_map.visible = false
 	add_child(_map)
 	_build_pause()
+	_build_panel()
 
 	G.input_mode_changed.connect(func(_m): _update_help())
 	G.settings_changed.connect(_layout)
@@ -149,14 +183,31 @@ func attach(p: Joueur) -> void:
 	_cross.arsenal = p.arsenal
 	_vitals.arsenal = p.arsenal
 	p.arsenal.hit.connect(_cross.on_hit)
-	p.arsenal.notice.connect(func(t: String):
-		_notice.text = t
-		_notice_t = 2.0)
+	p.arsenal.notice.connect(notify)
+	p.arsenal.shop_requested.connect(open_shop)
+	p.arsenal.loadout_requested.connect(open_loadout_choice)
+
+
+func notify(t: String) -> void:
+	_notice.text = t
+	_notice_t = 2.5
+
+
+func set_partie(p: Partie) -> void:
+	partie = p
+	_map.partie = p
+	if p:
+		p.message.connect(notify)
 
 
 func set_avion(a: Avion) -> void:
 	avion = a
 	_map.avion = a
+
+
+func set_pillage(p: Pillage) -> void:
+	pillage = p
+	_map.pillage = p
 
 
 # ------------------------------------------------------------------------------------------------
@@ -210,23 +261,42 @@ func toggle_map() -> void:
 func open_pause() -> void:
 	if _pause.visible:
 		return
+	close_panel()
 	_pause.visible = true
 	_map.visible = false
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var training := mode == "entrainement"
+	_plane_btn.visible = training
+	_visit_btn.visible = training
+	_drone_btn.visible = training
+	_lobby_btn.visible = mode != "lobby"
+	_lobby_btn.text = "Abandonner la partie (lobby)" if mode == "partie" else "Retour au lobby"
+	_first_button.text = "Fermer" if mode == "lobby" else "Reprendre"
 	_drone_btn.text = "Quitter le drone" if player and player.is_drone() else "Mode drone (visite libre)"
+	_layout()
 	_first_button.grab_focus.call_deferred()
 
 
 func close_pause() -> void:
 	_pause.visible = false
 	get_tree().paused = false
+	if mode == "lobby":
+		request_settings_closed.emit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _pause.visible:
 		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel"):
 			close_pause()
+			get_viewport().set_input_as_handled()
+		return
+	if mode == "lobby":
+		return
+	if _panel.visible:
+		if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
+			if _panel_kind != "fin":
+				close_panel()
 			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("carte"):
@@ -256,8 +326,8 @@ func _build_pause() -> void:
 	title.text = "PAUSE"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_first_button = _button("Reprendre", close_pause)
-	_button("Nouveau saut en parachute", func(): close_pause(); request_plane.emit())
-	_button("Visite libre (au Lazaret)", func(): close_pause(); request_visit.emit())
+	_plane_btn = _button("Nouveau saut en parachute", func(): close_pause(); request_plane.emit())
+	_visit_btn = _button("Visite libre (au Lazaret)", func(): close_pause(); request_visit.emit())
 	_drone_btn = _button("Mode drone (visite libre)", func():
 		close_pause()
 		if player:
@@ -273,7 +343,124 @@ func _build_pause() -> void:
 	fps.add_theme_font_size_override("font_size", 20)
 	fps.toggled.connect(func(on: bool): G.set_setting("show_fps", on))
 	_pause_box.add_child(fps)
+	_lobby_btn = _button("Retour au lobby", func(): close_pause(); request_lobby.emit())
 	_button("Quitter le jeu", func(): get_tree().quit())
+
+
+# ------------------------------------------------------------------------------------------------
+# Fenêtres en jeu (achat, choix de classe, fin de partie) : le jeu continue derrière
+# ------------------------------------------------------------------------------------------------
+func _build_panel() -> void:
+	_panel = Control.new()
+	_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_panel.visible = false
+	add_child(_panel)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.05, 0.08, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_panel.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_panel.add_child(center)
+	_panel_box = VBoxContainer.new()
+	_panel_box.custom_minimum_size = Vector2(620, 0)
+	_panel_box.add_theme_constant_override("separation", 8)
+	center.add_child(_panel_box)
+
+
+func _panel_begin(kind: String, title: String) -> void:
+	_panel_kind = kind
+	for n in _panel_box.get_children():
+		_panel_box.remove_child(n)
+		n.queue_free()
+	var t := _label(_panel_box, 32, Color(1, 0.85, 0.45))
+	t.text = title
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_panel.visible = true
+	_map.visible = false
+	if player:
+		player.ui_block = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _panel_button(text: String, cb: Callable, disabled := false, small := false) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.disabled = disabled
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_font_size_override("font_size", 17 if small else 21)
+	b.custom_minimum_size = Vector2(620, 46 if small else 58)
+	b.pressed.connect(cb)
+	_panel_box.add_child(b)
+	return b
+
+
+func _panel_end() -> void:
+	# Taille du texte et de la fenêtre comme le reste de l'interface, sans dépasser l'écran.
+	var vp := get_viewport().get_visible_rect().size
+	var h := _panel_box.get_combined_minimum_size().y
+	var ps := minf(clampf(float(G.settings.hud_scale), 0.5, 2.0), vp.y * 0.95 / maxf(h, 1.0))
+	_panel_box.scale = Vector2(ps, ps)
+	_panel_box.pivot_offset = _panel_box.get_combined_minimum_size() / 2
+	for n in _panel_box.get_children():
+		if n is Button and not n.disabled:
+			n.grab_focus.call_deferred()
+			break
+
+
+func close_panel() -> void:
+	if not _panel.visible:
+		return
+	_panel.visible = false
+	_panel_kind = ""
+	if player and not (partie and partie.respawn_left >= 0.0):
+		player.ui_block = false
+
+
+func open_shop(station: Node3D) -> void:
+	_station = station
+	var a := player.arsenal
+	_panel_begin("achat", "STATION D'ACHAT · %d €" % a.argent)
+	for art in Boutique.ARTICLES:
+		var why := Boutique.refusal(a, art.id)
+		var text := "%s — %d €\n%s" % [art.nom, art.prix, art.desc if why == "" else why]
+		_panel_button(text, func():
+			if Boutique.buy(a, art.id, _station, pillage):
+				open_shop(_station), why != "")
+	_panel_button("Fermer", close_panel, false, true)
+	_panel_end()
+
+
+func open_loadout_choice(crate: Coffre) -> void:
+	_crate = crate
+	_panel_begin("classe", "LARGAGE DE CLASSE")
+	for k in Loadouts.SLOTS:
+		var d := Loadouts.get_one(k)
+		_panel_button("%s\n%s" % [d.nom, Loadouts.summary(d)], func():
+			if is_instance_valid(_crate) and _crate.can_open():
+				_crate.open_chest()
+				player.arsenal.apply_loadout(d)
+			close_panel())
+	_panel_button("Fermer", close_panel, false, true)
+	_panel_end()
+
+
+func show_end(victory: bool, stats: Dictionary) -> void:
+	_panel_begin("fin", "VICTOIRE — DERNIER DEBOUT" if victory else "ÉLIMINÉ")
+	var t := int(stats.get("temps", 0.0))
+	var lines := [
+		"Temps de survie : %d min %02d s" % [t / 60, t % 60],
+		"Phase atteinte : %d / %d" % [int(stats.get("phase", 1)), Brume.PHASES.size()],
+		"Réapparitions : %d" % int(stats.get("morts", 0)),
+		"Argent en poche : %d €" % int(stats.get("argent", 0)),
+	]
+	for l in lines:
+		var lbl := _label(_panel_box, 22, Color(1, 1, 1))
+		lbl.text = l
+	_panel_button("Retour au lobby", func():
+		close_panel()
+		request_lobby.emit())
+	_panel_end()
 
 
 func _button(text: String, cb: Callable) -> Button:
@@ -337,7 +524,7 @@ func _process(delta: float) -> void:
 	if player == null:
 		return
 	_vitals.visible = player.etat != Joueur.Etat.DRONE
-	_cross.visible = not _map.visible
+	_cross.visible = not _map.visible and not _panel.visible
 	var p := player.global_position
 	_place.text = G.where(p)
 	var heading := fposmod(-rad_to_deg(player.rotation.y), 360.0)
@@ -379,6 +566,24 @@ func _process(delta: float) -> void:
 				st = "COUCHÉ"
 	_state.text = st
 	var a := player.arsenal
+	# Brume, réapparition, voile toxique.
+	var in_match := partie != null and partie.running
+	_brume_lbl.text = partie.brume.status_text() if in_match else ""
+	if in_match and player.in_gas:
+		_brume_lbl.text = "DANS LA BRUME — zone sûre à %d m%s" % [int(partie.brume.distance_to_safety(player.global_position)),
+			" · masque %d s" % int(a.gas_mask) if a.gas_mask > 0.0 else ""]
+	_brume_lbl.modulate = Color(1, 0.45, 0.35) if player.in_gas else Color(1, 1, 1)
+	_gas.color.a = (0.22 + 0.06 * sin(Time.get_ticks_msec() / 250.0)) if player.in_gas else 0.0
+	if partie and partie.respawn_left >= 0.0:
+		_respawn_lbl.text = "Redéploiement dans %d s" % int(ceil(partie.respawn_left))
+	elif partie and not partie.running and player.sante.dead:
+		_respawn_lbl.text = "Éliminé"
+	else:
+		_respawn_lbl.text = ""
+	if a.letal_n > 0:
+		tl["grenade"] = "GREN. %d" % a.letal_n
+	if a.tactique_n > 0:
+		tl["fumigene"] = "FUMI. %d" % a.tactique_n
 	if a.target_item:
 		tl["action"] = "OUVRIR" if a.target_item is Coffre else "PRENDRE"
 		var k: String = {"pad": "X", "touch": "ACTION"}.get(G.input_mode, "E")
@@ -388,8 +593,10 @@ func _process(delta: float) -> void:
 		var w := a.current()
 		if not w.is_empty() and int(w.chargeur) == 0 and a.can_use_weapon():
 			_prompt.text = "Recharger (%s)" % {"pad": "X", "touch": "RECH."}.get(G.input_mode, "R") if int(a.reserve[Armes.info(w.id).munition]) > 0 else "Plus de munitions"
+	if _panel.visible:
+		_prompt.text = ""
 	if not a.can_use_weapon():
-		for k in ["tir", "viser", "recharger", "arme", "plaque"]:
+		for k in ["tir", "viser", "recharger", "arme", "plaque", "grenade", "fumigene"]:
 			tl[k] = ""
 	touch.labels = tl
 	_money.text = "%d €" % a.argent
@@ -410,6 +617,8 @@ class MapView:
 	## Carte tactique : l'image générée, les noms des lieux, le joueur et le trajet de l'avion.
 	var player: Node3D
 	var avion: Avion
+	var partie: Partie
+	var pillage: Pillage
 	var _tex: Texture2D
 
 	func _ready() -> void:
@@ -440,6 +649,24 @@ class MapView:
 			var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			draw_string_outline(font, pt + Vector2(-w / 2, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 6, Color(0, 0, 0, 0.9))
 			draw_string(font, pt + Vector2(-w / 2, 0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1))
+		var px_per_m := side / world
+		if partie and partie.running and partie.brume.phase > 0:
+			var b := partie.brume
+			var c: Vector2 = to_map.call(b.center.x, b.center.y)
+			draw_arc(c, b.radius * px_per_m, 0, TAU, 96, Color(0.85, 0.95, 0.55, 0.95), 3.0)
+			var nc: Vector2 = to_map.call(b.next_center.x, b.next_center.y)
+			_dashed_circle(nc, b.next_radius * px_per_m, Color(1, 1, 1, 0.9))
+		if pillage:
+			var fouineur: bool = player and player.arsenal.has_perk("fouineur")
+			for ch in pillage.chests:
+				if not is_instance_valid(ch) or not ch.can_open():
+					continue
+				var cp: Vector2 = to_map.call(ch.global_position.x, ch.global_position.z)
+				if ch.largage:
+					draw_circle(cp, side / 80.0, Color(0.4, 1.0, 0.5))
+					draw_arc(cp, side / 50.0, 0, TAU, 24, Color(0.4, 1.0, 0.5), 2.0)
+				elif fouineur and ch.global_position.distance_to(player.global_position) < 90.0:
+					draw_rect(Rect2(cp - Vector2.ONE * side / 140.0, Vector2.ONE * side / 70.0), Color(1, 0.8, 0.3))
 		if is_instance_valid(avion):
 			var a: Vector2 = to_map.call(avion.start.x, avion.start.z)
 			var b: Vector2 = to_map.call(avion.end.x, avion.end.z)
@@ -455,6 +682,15 @@ class MapView:
 			draw_colored_polygon(PackedVector2Array([pp + dir * s * 1.4, pp - dir * s * 0.8 + perp * s, pp - dir * s * 0.8 - perp * s]), Color(0.2, 0.9, 1.0))
 			draw_polyline(PackedVector2Array([pp + dir * s * 1.4, pp - dir * s * 0.8 + perp * s, pp - dir * s * 0.8 - perp * s, pp + dir * s * 1.4]), Color(0, 0, 0), 2.0)
 
+
+	func _dashed_circle(c: Vector2, r: float, col: Color) -> void:
+		if r < 1.0:
+			draw_circle(c, 3.0, col)
+			return
+		var n := 48
+		for k in n:
+			if k % 2 == 0:
+				draw_arc(c, r, TAU * k / n, TAU * (k + 1) / n, 4, col, 2.0)
 
 class Crosshair:
 	extends Control
@@ -540,8 +776,17 @@ class Vitals:
 		var px := x0 - 56
 		draw_rect(Rect2(px, y - 2, 16, 22), Color(0.35, 0.65, 1.0, 0.9))
 		_text(font, Vector2(px + 20, y + 16), "×%d" % arsenal.plates, 18, Color(1, 1, 1))
+		var gear := []
+		if arsenal.letal_n > 0:
+			gear.append("Grenade ×%d" % arsenal.letal_n)
+		if arsenal.tactique_n > 0:
+			gear.append("Fumigène ×%d" % arsenal.tactique_n)
+		if arsenal.gas_mask > 0.0:
+			gear.append("Masque %d s" % int(arsenal.gas_mask))
+		if not gear.is_empty():
+			_text(font, Vector2(x0, y + 46), " · ".join(gear), 14, Color(1, 1, 1, 0.75))
 		if arsenal.plate_t > 0.0:
-			var pr := Rect2(x0, y - 12, bw * arsenal.plate_t / Arsenal.PLATE_TIME, 5)
+			var pr := Rect2(x0, y - 12, bw * arsenal.plate_t / arsenal.plate_time(), 5)
 			draw_rect(pr, Color(0.6, 0.85, 1.0))
 		# Arme et munitions.
 		var w := arsenal.current()

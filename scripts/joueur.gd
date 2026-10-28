@@ -53,6 +53,8 @@ const AUTO_DEPLOY_LATE := 12.0  # si on a déjà ouvert puis coupé pendant cett
 const REDEPLOY_HEIGHT := 12.0   # sauter dans le vide de plus haut que ça permet d'ouvrir
 # Divers.
 const WATER_LEVEL := -1.25
+const FALL_SAFE := 15.0         # vitesse de chute sans dégâts (≈ 6 m)
+const FALL_DAMAGE := 9.0        # points de vie par m/s au-delà
 const DRONE_SPEED := 22.0
 const DRONE_FAST := 65.0
 const LOOK_PAD := 150.0
@@ -82,6 +84,8 @@ var hspeed := 0.0             # vitesse horizontale réelle (affichage, tests)
 var sante: Sante
 var arsenal: Arsenal
 var hitboxes: Array[Area3D] = []
+var in_gas := false           # dans la Brume (réglé par la partie)
+var ui_block := false         # un menu (achat, classe) est ouvert : les commandes locales sont coupées
 
 var _local := Intentions.new()
 var _shape: CollisionShape3D
@@ -104,6 +108,7 @@ var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assista
 
 
 func _ready() -> void:
+	add_to_group("combattant")
 	collision_layer = G.L_PLAYER
 	collision_mask = G.L_WORLD
 	floor_max_angle = deg_to_rad(50.0)
@@ -202,6 +207,15 @@ func set_drone(on: bool) -> void:
 	velocity = Vector3.ZERO
 
 
+## Mort en attente de réapparition : la caméra survole l'endroit, sans commandes.
+func spectate(at: Vector3) -> void:
+	set_drone(true)
+	ui_block = true
+	sprinting = false
+	global_position = at + Vector3(0, 14.0, 10.0)
+	look_at_point(at)
+
+
 func is_drone() -> bool:
 	return etat == Etat.DRONE
 
@@ -258,6 +272,14 @@ func _process(delta: float) -> void:
 	if get_tree().paused:
 		return
 	var i := _local
+	if ui_block:
+		i.move = Vector2.ZERO
+		i.fire_held = false
+		i.ads_held = false
+		i.plate_held = false
+		i.jump_held = false
+		i.crouch_held = false
+		return
 	var stick := Input.get_vector("look_left", "look_right", "look_down", "look_up")
 	var assist := arsenal.look_scale()
 	if stick != Vector2.ZERO:
@@ -278,6 +300,8 @@ func _process(delta: float) -> void:
 	i.interact = i.interact or Input.is_action_just_pressed("interact")
 	i.use = i.use or Input.is_action_just_pressed("use")
 	i.plate_held = Input.is_action_pressed("plate")
+	i.lethal = i.lethal or Input.is_action_just_pressed("lethal")
+	i.tactical = i.tactical or Input.is_action_just_pressed("tactical")
 	if touch and touch.visible:
 		var d := touch.consume_look() * 0.18 * float(G.settings.sens_touch) * assist * lerpf(1.0, 0.6, arsenal.ads)
 		i.look += Vector2(-d.x, -d.y)
@@ -296,6 +320,8 @@ func _process(delta: float) -> void:
 		i.swap = i.swap or touch.take("arme")
 		i.interact = i.interact or touch.take("action")
 		i.plate_held = i.plate_held or touch.held("plaque")
+		i.lethal = i.lethal or touch.take("grenade")
+		i.tactical = i.tactical or touch.take("fumigene")
 
 
 func _look(d: Vector2) -> void:
@@ -378,7 +404,7 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 	# Sprint : appui = courir ; en courant, appui = sprint tactique.
 	if i.sprint and not swimming and not arsenal.blocks_sprint():
 		if sprinting and tac_ready() and posture == Posture.DEBOUT:
-			tac_left = TAC_DURATION
+			tac_left = TAC_DURATION * (2.0 if arsenal.has_perk("double_temps") else 1.0)
 		elif not sprinting and (posture == Posture.DEBOUT or _set_posture(Posture.DEBOUT)):
 			sprinting = true
 	if sprinting and (i.move.y > -0.3 or posture != Posture.DEBOUT or swimming):
@@ -452,6 +478,10 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 		if _fall_peak > 9.0:
 			G.play("jump_land", -6.0)
 			landed.emit()
+		# Dégâts de chute (à travers l'armure) au-delà de ~6 m.
+		if _fall_peak > FALL_SAFE and not arsenal.has_perk("amorti"):
+			sante.take((_fall_peak - FALL_SAFE) * FALL_DAMAGE, "jambes", "chute", true)
+			G.play("hurt", -2.0)
 		_fall_peak = 0.0
 	_footsteps(delta)
 

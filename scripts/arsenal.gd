@@ -8,6 +8,8 @@ extends Node
 signal hit(kind: String, amount: float)   # "corps", "tete", "armure", "brise", "elimination"
 signal changed
 signal notice(text: String)
+signal shop_requested(station: Node3D)
+signal loadout_requested(crate: Coffre)
 
 const REACH := 2.0
 const SPRINT_OUT := 0.14       # délai avant de tirer en sortant du sprint
@@ -26,6 +28,12 @@ var cur := 0
 var reserve := {}
 var plates := 0
 var argent := 0
+var perks: Array = []          # atouts de la classe récupérée
+var letal := ""                # équipement létal (grenade) et son nombre
+var letal_n := 0
+var tactique := ""             # équipement tactique (fumigène)
+var tactique_n := 0
+var gas_mask := 0.0            # secondes de protection du masque à gaz restantes
 var ads := 0.0
 var spread := 0.0              # dispersion actuelle en degrés (réticule)
 var reloading := false
@@ -60,8 +68,28 @@ func setup(j: Joueur, hitboxes: Array[Area3D]) -> void:
 		reserve[k] = 0
 
 
+func has_perk(id: String) -> bool:
+	return perks.has(id)
+
+
+func plate_time() -> float:
+	return PLATE_TIME * (0.5 if has_perk("fixation") else 1.0)
+
+
+func plates_max() -> int:
+	return 7 if has_perk("ravitailleur") else Armes.PLAQUES_PORTEES
+
+
 ## Équipement de départ (Résurgence : un pistolet, une plaque sur soi, deux dans le sac).
+## Aussi à chaque réapparition : la classe et les atouts sont perdus avec le sac.
 func starting_kit() -> void:
+	perks = []
+	letal = ""
+	letal_n = 0
+	tactique = ""
+	tactique_n = 0
+	gas_mask = 0.0
+	sante.regen_delay = Sante.REGEN_DELAY
 	slots = [Armes.nouvelle("p9", 0), {}]
 	cur = 0
 	for k in reserve:
@@ -74,6 +102,36 @@ func starting_kit() -> void:
 	plate_t = 0.0
 	view.set_weapon(current(), false)
 	changed.emit()
+
+
+## Largage de classe : les deux armes de la classe (légendaires, chargeurs pleins, munitions),
+## ses atouts et ses équipements.
+func apply_loadout(d: Dictionary) -> void:
+	slots = [Armes.nouvelle(d.principale, Loadouts.RARETE), Armes.nouvelle(d.secondaire, Loadouts.RARETE)]
+	cur = 0
+	perks = d.atouts.duplicate()
+	letal = d.get("letal", "grenade")
+	letal_n = 1
+	tactique = d.get("tactique", "fumigene")
+	tactique_n = 1
+	for id in [d.principale, d.secondaire]:
+		var kind: String = Armes.info(id).munition
+		reserve[kind] = maxi(int(reserve[kind]), int(Armes.MUNITIONS[kind].lot) * 2)
+	sante.regen_delay = 2.5 if has_perk("robuste") else Sante.REGEN_DELAY
+	reloading = false
+	_swap_t = SWAP_TIME
+	view.set_weapon(current())
+	notice.emit("Classe « %s »" % d.get("nom", ""))
+	changed.emit()
+
+
+## À la mort : tout ce qu'on porte part dans un sac au sol.
+func drop_everything() -> Dictionary:
+	var bag := {"armes": [], "munitions": reserve.duplicate(), "plaques": plates, "argent": argent}
+	for w in slots:
+		if not w.is_empty():
+			bag.armes.append(w.duplicate())
+	return bag
 
 
 func current() -> Dictionary:
@@ -148,16 +206,32 @@ func simulate(i: Intentions, delta: float) -> void:
 	elif i.reload or (i.use and target_item == null):
 		start_reload()
 
+	# Équipements lancés.
+	if (i.lethal and letal_n > 0) or (i.tactical and tactique_n > 0):
+		if allowed and plate_t <= 0.0:
+			var k := letal if i.lethal and letal_n > 0 else tactique
+			if k == letal and i.lethal:
+				letal_n -= 1
+			else:
+				tactique_n -= 1
+			var cam := joueur.cam
+			Lancer.throw(get_tree().current_scene, k, cam.global_position - cam.global_basis.z * 0.5,
+				-cam.global_basis.z, joueur, _exclude)
+			G.play("knife", -8.0, 0.8)
+			changed.emit()
+	if gas_mask > 0.0 and joueur.in_gas:
+		gas_mask = maxf(0.0, gas_mask - delta)
+
 	# Plaques : maintenir pour en mettre une, puis la suivante.
 	if i.plate_held and plates > 0 and sante.armor < sante.armor_max - 0.01 and (allowed or joueur.etat == Joueur.Etat.SOL):
 		if plate_t <= 0.0:
 			reloading = false
-			view.play_anim("swap", PLATE_TIME)
+			view.play_anim("swap", plate_time())
 			G.play("mag_out", -6.0, 0.7)
 		plate_t += delta
 		if joueur.sprinting:
 			joueur.stop_sprint()
-		if plate_t >= PLATE_TIME:
+		if plate_t >= plate_time():
 			if sante.insert_plate():
 				plates -= 1
 				G.play("plank_place", -3.0, 1.3)
@@ -204,7 +278,7 @@ func _update_spread(w: Dictionary, a: Dictionary) -> void:
 		spread = 0.0
 		return
 	var rar: Dictionary = Armes.RARETES[int(w.rarete)]
-	var base := lerpf(float(a.disp), float(a.disp_ads), ads) * float(rar.disp)
+	var base := lerpf(float(a.disp), float(a.disp_ads), ads) * float(rar.disp) * (0.75 if has_perk("tete_froide") else 1.0)
 	var move := clampf(joueur.hspeed / 6.0, 0.0, 1.5) * 1.6 * (1.0 - ads * 0.75)
 	var air := 0.0 if joueur.is_on_floor() or joueur.etat == Joueur.Etat.PARACHUTE else 2.0
 	spread = base + move + air + _bloom * (1.0 - ads * 0.6)
@@ -259,7 +333,7 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 	view.shot(float(a.recul))
 	_bloom = minf(_bloom + 0.35 * float(a.recul), 4.0)
 	# Recul : la visée monte, avec un peu de dérive latérale.
-	var k := float(a.recul) * lerpf(0.45, 0.22, ads)
+	var k := float(a.recul) * lerpf(0.45, 0.22, ads) * (0.75 if has_perk("tete_froide") else 1.0)
 	joueur.add_recoil(k, randf_range(-0.35, 0.35) * k)
 	if int(w.chargeur) <= 0 and int(reserve[a.munition]) > 0:
 		start_reload()
@@ -321,12 +395,17 @@ func _find_interactable() -> Node3D:
 			best_score = score
 			best = b
 	for c in pillage.chests:
-		if not c.can_open():
+		if not is_instance_valid(c) or not c.can_open():
 			continue
 		var score := _reach_score(p, fwd, c.global_position + Vector3(0, 0.3, 0))
 		if score < best_score:
 			best_score = score
 			best = c
+	for st in pillage.shops:
+		var score := _reach_score(p, fwd, st.global_position + Vector3(0, 0.6, 0)) * 0.9
+		if score < best_score:
+			best_score = score
+			best = st
 	return best
 
 
@@ -351,15 +430,23 @@ func interact_label() -> String:
 		return "Ramasser : %s" % b.label()
 	if target_item is Coffre:
 		return (target_item as Coffre).label()
+	if target_item and target_item.has_meta("boutique"):
+		return "Station d'achat"
 	return ""
 
 
 func _interact(t: Node3D) -> void:
 	if t is Coffre:
 		var c := t as Coffre
+		if c.largage:
+			loadout_requested.emit(c)
+			return
 		if c.ravitaillement:
 			refill()
 		c.open_chest()
+		return
+	if t.has_meta("boutique"):
+		shop_requested.emit(t)
 		return
 	var b := t as Butin
 	var w := b.arme.duplicate()
@@ -386,7 +473,7 @@ func _interact(t: Node3D) -> void:
 func refill() -> void:
 	for k in reserve:
 		reserve[k] = int(Armes.MUNITIONS[k].max)
-	plates = Armes.PLAQUES_PORTEES
+	plates = plates_max()
 	sante.reset(Armes.PLAQUES_MAX)
 	notice.emit("Ravitaillé")
 	changed.emit()
@@ -406,12 +493,13 @@ func _auto_pickup() -> void:
 				var room := int(Armes.MUNITIONS[b.munition].max) - int(reserve[b.munition])
 				if room <= 0:
 					continue
-				var take := mini(room, b.quantite)
+				var gain := int(round(b.quantite * (1.5 if has_perk("pillard") else 1.0)))
+				var take := mini(room, gain)
 				reserve[b.munition] = int(reserve[b.munition]) + take
-				b.quantite -= take
+				b.quantite = 0 if take >= gain else b.quantite - take
 				notice.emit("+%d %s" % [take, String(Armes.MUNITIONS[b.munition].nom).to_lower()])
 			Butin.Type.PLAQUE:
-				var room := Armes.PLAQUES_PORTEES - plates
+				var room := plates_max() - plates
 				if room <= 0:
 					continue
 				var take := mini(room, b.quantite)
@@ -419,8 +507,9 @@ func _auto_pickup() -> void:
 				b.quantite -= take
 				notice.emit("+%d plaque%s" % [take, "s" if take > 1 else ""])
 			Butin.Type.ARGENT:
-				argent = mini(Armes.ARGENT_MAX, argent + b.quantite)
-				notice.emit("+%d €" % b.quantite)
+				var gain := int(round(b.quantite * (1.5 if has_perk("pillard") else 1.0)))
+				argent = mini(Armes.ARGENT_MAX, argent + gain)
+				notice.emit("+%d €" % gain)
 				b.quantite = 0
 		G.play("powerup_pick", -14.0, 1.4)
 		if b.quantite <= 0:

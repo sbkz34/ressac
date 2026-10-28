@@ -25,7 +25,8 @@ var _button_ids := {}         # doigt -> bouton
 var _pressed := {}            # boutons appuyés depuis la dernière lecture
 const STICK_R := 90.0
 const NAMES := {"saut": "SAUT", "accroupi": "ACCROUPI", "sprint": "SPRINT", "carte": "CARTE", "pause": "II",
-	"tir": "TIR", "viser": "VISER", "recharger": "RECH.", "arme": "ARME", "plaque": "PLAQUE", "action": ""}
+	"tir": "TIR", "viser": "VISER", "recharger": "RECH.", "arme": "ARME", "plaque": "PLAQUE", "action": "",
+	"grenade": "", "fumigene": ""}
 
 
 ## Libellé affiché (vide : bouton masqué et inactif).
@@ -88,6 +89,8 @@ func _buttons() -> Dictionary:
 		"arme": [Vector2(s.x - r * 7.6, s.y - r * 4.6), r * 0.62],
 		"plaque": [Vector2(s.x - r * 9.3, s.y - r * 3.3), r * 0.62],
 		"action": [Vector2(s.x * 0.62, s.y * 0.62), r * 0.75],
+		"grenade": [Vector2(s.x - r * 1.2, s.y * 0.38 - r * 1.5), r * 0.55],
+		"fumigene": [Vector2(s.x - r * 2.6, s.y * 0.38 - r * 0.7), r * 0.55],
 		"carte": [Vector2(s.x - r * 1.0, r * 1.0), r * 0.6],
 		"pause": [Vector2(s.x - r * 2.6, r * 1.0), r * 0.6],
 	}

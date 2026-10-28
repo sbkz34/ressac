@@ -12,13 +12,42 @@ GPU Mali), avec les graphismes et les sons de [Dernière Vague](https://github.c
 
 ![L'Île du Lazaret](docs/carte.png)
 
-## État actuel : jalon 2, les armes et le combat
+## État actuel : jalon 3, les règles de Résurgence
 
-Chaque partie commence dans l'avion qui traverse l'île : saut, chute libre, parachute. Sur l'île,
-**158 objets** répartis dans les bâtiments (armes de toutes raretés, munitions, plaques d'armure,
-argent) et **19 coffres** ; les lieux à 3 étoiles (Lazaret, Conserverie) sont les mieux fournis.
-Au **champ de tir de la Batterie**, des mannequins en armure à 10, 25 (mobile), 50 et 70 m,
-toutes les armes en épique et une caisse de ravitaillement sans fin.
+On arrive au **lobby** : jouer une partie de Résurgence (en solo pour l'instant, les bots
+arrivent au jalon 4), s'entraîner au champ de tir, préparer ses **5 classes** (arme principale,
+arme secondaire, un atout par colonne), régler l'affichage.
+
+Une partie : saut d'avion au-dessus de l'île, pillage, puis **la Brume** referme l'aire de jeu en
+6 phases (environ 10 minutes) jusqu'à l'un des lieux de fin (Lazaret, Cimetière, Citerne,
+Cabanons, Salins). Hors du cercle, on perd de la vie à travers l'armure, de plus en plus vite.
+Mort avant la phase 5 : on laisse un sac avec tout son butin et on **revient en chute libre**
+dans la zone après 10 à 30 s, avec le pistolet de départ. À partir de la phase 5, chaque vie
+compte. Rester debout jusqu'à la fermeture complète donne la victoire.
+
+L'argent ramassé s'utilise aux **5 stations d'achat** :
+
+| Article | Prix |
+|---|---|
+| Largage de classe (une caisse descend près de la station ; on y choisit une de ses classes) | 4 500 € |
+| Gilet de plaques (3 plaques dans le sac) | 900 € |
+| Munitions (tout au maximum) | 500 € |
+| Masque à gaz (25 s sans dégâts dans la Brume) | 1 200 € |
+| Grenade · Fumigène | 600 € · 400 € |
+
+Un largage de classe est offert à tout le monde au début de la phase 2. Les armes de classe
+sont légendaires. Atouts (un par colonne) : **Double Temps**, **Pillard**, **Ravitailleur** ·
+**Fixation rapide**, **Robuste**, **Dur à cuire** · **Amorti**, **Tête froide**, **Fouineur**.
+Les chutes de plus de 6 m font des dégâts (sauf avec Amorti).
+
+| | |
+|---|---|
+| ![Lobby](docs/captures/30_lobby.jpg) | ![Classe](docs/captures/31b_classe.jpg) |
+| ![La Brume](docs/captures/32_brume.jpg) | ![Dans la Brume](docs/captures/33_dans_la_brume.jpg) |
+| ![Carte et cercles](docs/captures/34_carte_brume.jpg) | ![Station d'achat](docs/captures/35_boutique.jpg) |
+| ![Largage de classe](docs/captures/36_largage.jpg) | ![Fin de partie](docs/captures/37_fin.jpg) |
+
+### Jalons précédents
 
 Mouvement du jalon 1 : sprint, sprint tactique, glissade et **cancel slide**, escalade de rebords,
 accroupi / couché, nage, parachute (ouvrir, couper, rouvrir), redéploiement depuis un point haut.
@@ -30,7 +59,8 @@ accroupi / couché, nage, parachute (ouvrir, couper, rouvrir), redéploiement de
 | Ramasser, ouvrir un coffre | X | E ou F | ACTION (apparaît quand c'est possible) |
 | Recharger | X (quand il n'y a rien à ramasser) | R | RECH. |
 | Changer d'arme | Y | 1, 2, molette | ARME |
-| Plaque d'armure (maintenir) | RB | 4 ou X | PLAQUE |
+| Plaque d'armure (maintenir) | Croix haut | 4 ou X | PLAQUE |
+| Grenade · fumigène | RB · LB | G · T | GREN. · FUMI. (quand on en a) |
 | Sauter, escalader, sauter de l'avion, ouvrir le parachute | A | Espace | SAUT |
 | Accroupi · glissade en courant · annuler la glissade · couper le parachute (maintenir : couché) | B | C | ACCROUPI |
 | Sprint (encore une fois en courant : sprint tactique) | L3 | Maj | SPRINT ou stick poussé au bord |
@@ -75,7 +105,8 @@ dispersion, visée plus rapide.
 - Vérifications : `godot --headless --fixed-fps 60 --path . -- --check` (relief, escaliers, glissade,
   cancel slide, sprint tactique, escalade, parachute, redéploiement, avion, nage, drone, interface,
   butin, ramassage, rechargement, balles pour éliminer au champ de tir, tête au fusil de précision,
-  plaques, régénération, coffres).
+  plaques, régénération, coffres, chutes, grenade, achats, largage et choix de classe, Brume,
+  mort et réapparition, fin de partie et victoire en accéléré).
 - Captures de chaque lieu : `godot --path . -- --tour --shots=/tmp/captures`.
 - Chaque push sur `main` vérifie l'île, compile l'APK (GitHub Actions) et publie une release.
 

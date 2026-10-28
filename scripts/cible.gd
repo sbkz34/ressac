@@ -23,6 +23,7 @@ var _hitboxes: Array[Area3D] = []
 
 func _ready() -> void:
 	add_to_group("cible")
+	add_to_group("combattant")
 	sante = Sante.new()
 	add_child(sante)
 	sante.reset(plates)

@@ -17,6 +17,8 @@ var armor := 0.0
 var armor_max := Armes.PLAQUE * Armes.PLAQUES_MAX
 var dead := false
 var invulnerable := false
+var regen_delay := REGEN_DELAY
+var last_cause := ""          # "balle", "grenade", "brume", "chute"
 var _since_hit := 99.0
 
 
@@ -41,13 +43,15 @@ func insert_plate() -> bool:
 	return true
 
 
-## Applique des dégâts ; l'armure encaisse d'abord. Renvoie les dégâts réellement infligés.
-func take(amount: float, zone := "torse") -> float:
+## Applique des dégâts ; l'armure encaisse d'abord (sauf la Brume et les chutes, qui passent
+## à travers). Renvoie les dégâts réellement infligés.
+func take(amount: float, zone := "torse", cause := "balle", through_armor := false) -> float:
 	if dead or invulnerable or amount <= 0.0:
 		return 0.0
 	_since_hit = 0.0
-	var on_armor := armor > 0.0
-	var absorbed := minf(armor, amount)
+	last_cause = cause
+	var on_armor := armor > 0.0 and not through_armor
+	var absorbed := 0.0 if through_armor else minf(armor, amount)
 	armor -= absorbed
 	var rest := amount - absorbed
 	var broken := on_armor and armor <= 0.0
@@ -68,7 +72,7 @@ func _physics_process(delta: float) -> void:
 	if dead:
 		return
 	_since_hit += delta
-	if _since_hit > REGEN_DELAY and hp < HP_MAX:
+	if _since_hit > regen_delay and hp < HP_MAX:
 		hp = minf(HP_MAX, hp + REGEN_RATE * delta)
 		changed.emit()
 

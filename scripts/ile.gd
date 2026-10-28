@@ -725,6 +725,7 @@ func _emplacement(node: Node3D) -> void:
 func _shop(p: Vector3) -> void:
 	var node := Node3D.new()
 	node.name = "StationAchat"
+	node.set_meta("boutique", true)
 	add_child(node)
 	p.y = terrain.height_at(p.x, p.z)
 	node.position = p
@@ -743,6 +744,7 @@ func _shop(p: Vector3) -> void:
 	label.no_depth_test = false
 	node.add_child(label)
 	label.position = Vector3(0, 3.0, 0)
+	label.visibility_range_begin = 5.0   # repère de loin, discret quand on est devant
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.75, 0.3)
 	light.light_energy = 1.2

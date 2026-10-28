@@ -53,7 +53,7 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
 | **0** | **Carte** ✅ | Île du Lazaret générée (relief, 10 lieux, bâtiments à étages, végétation), carte tactique, visite à pied et en drone, tests automatiques, APK. | L'APK installé permet de visiter l'île à la manette et au tactile. |
 | **1** | **Mouvement** ✅ | Contrôleur du joueur : sprint, sprint tactique, glissade + **cancel slide**, saut de glissade, escalade de rebords, accroupi / couché, **parachute** (ouvrir, couper, rouvrir, ouverture auto) et saut d'avion, redéploiement depuis un point haut. Menu pause : taille de l'interface, marges, zone sûre, sensibilités. | Tests auto : glissade + annulation garde la vitesse et recharge le sprint tactique ; escalade d'un conteneur ; saut d'avion → atterrissage sur l'île. |
 | **2** | **Armes et combat** ✅ | 10 armes de Dernière Vague adaptées au PvP (dégâts par zone et selon la distance, raretés), santé + 3 plaques, régénération, visée et assistance, butin dans les bâtiments, coffres, champ de tir avec mannequins. | Tests auto : 9 balles de Faucon à 10 m, une balle d'Aiguille dans la tête à 70 m, plaques, ramassage, coffre. |
-| 3 | Règles Résurgence | La Brume en 6 phases, réapparition en parachute, argent, **stations d'achat**, **loadouts au lobby** et largages de classe. | Une partie complète jouable seul (sans bots) du saut à la fin de la Brume. |
+| **3** | **Règles Résurgence** ✅ | La Brume en 6 phases, réapparition en parachute, sac de butin à la mort, argent, **stations d'achat**, **loadouts au lobby** (5 classes, 9 atouts) et largages de classe, grenade et fumigène, dégâts de chute, lobby et fin de partie. | Tests auto : partie complète accélérée (cercles emboîtés, largage offert, Brume, mort, réapparition, fin en phase 5, victoire). |
 | 4 | Bots | IA : choisir un lieu, piller, se déplacer avec la zone, combattre (portée, couverture), acheter en station. Niveaux de difficulté. | Partie de 24 combattants qui se termine sans blocage en test automatique. |
 | 5 | Mobile | Interface tactile complète, réglages, performances (objectif 60 i/s, < 300 appels de dessin), sons, menus, progression. | Partie fluide sur le Poco X8 Pro, manette GameSir et tactile. |
 | 6 | Multijoueur | Serveur autoritaire Godot sans écran hébergé sur ton serveur, lobby, synchronisation (prédiction côté client), bots pour compléter les parties. | Partie à plusieurs téléphones + bots. |
@@ -89,7 +89,28 @@ Toutes les valeurs sont dans `scripts/armes.gd` (armes, munitions, raretés) et
 | Butin | 1 à 3 étoiles par lieu : 50 à 80 % des emplacements remplis, 1 à 3 coffres |
 | Départ | pistolet P9, 45 balles, une plaque sur soi, deux dans le sac |
 
-## 7. Choix techniques
+## 7. Règles de partie (jalon 3)
+
+Valeurs dans `scripts/brume.gd`, `scripts/partie.gd`, `scripts/boutique.gd` et `scripts/loadouts.gd`.
+
+| Phase | Attente | Resserrement | Rayon à la fin | Dégâts hors zone |
+|---|---|---|---|---|
+| 1 | 90 s | 60 s | 220 m | 2 /s |
+| 2 | 70 s | 50 s | 140 m | 4 /s |
+| 3 | 60 s | 45 s | 85 m | 7 /s |
+| 4 | 50 s | 40 s | 45 m | 11 /s |
+| 5 | 40 s | 35 s | 20 m | 16 /s |
+| 6 | 30 s | 40 s | 0 m | 25 /s |
+
+- Le cercle de départ (400 m) couvre toute l'île ; chaque cercle est entièrement dans le précédent
+  et avance vers un lieu de fin tiré au sort.
+- Réapparition : 10 s + 5 s par phase, en chute libre à 160 m au-dessus de la zone sûre, avec le
+  pistolet, une plaque et deux dans le sac. Fermée à partir de la phase 5.
+- À la mort : armes, munitions, plaques et argent restent au sol dans un sac.
+- Dégâts de chute au-delà de 15 m/s à l'impact (≈ 6 m), 9 points par m/s en plus, à travers
+  l'armure.
+
+## 8. Choix techniques
 
 - **Godot 4.6**, rendu *Compatibility* (GL ES 3), Android arm64 — comme Dernière Vague.
 - **L'île vient de données** : `data/ile.json` décrit les masses de terre, collines, routes, lieux,
@@ -101,7 +122,7 @@ Toutes les valeurs sont dans `scripts/armes.gd` (armes, munitions, raretés) et
   la simulation du joueur (`joueur.gd`) lit une structure `Intentions` (`intentions.gd`) : manette,
   clavier, tactile, bots de test et, plus tard, joueurs distants passent par le même chemin.
 
-## 8. Questions ouvertes
+## 9. Questions ouvertes
 
 - Taille des équipes au lancement : solo seulement, ou duo/trio avec des bots coéquipiers ?
 - Nombre de combattants par partie (24 ? 32 ?) — à confirmer avec les performances.

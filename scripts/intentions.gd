@@ -19,6 +19,8 @@ var swap := false
 var interact := false
 var use := false              # manette : ramasser s'il y a quelque chose, sinon recharger
 var plate_held := false
+var lethal := false           # lancer la grenade
+var tactical := false         # lancer le fumigène
 
 
 ## Les appuis ne valent que pour un pas ; ce qui est maintenu reste.
@@ -30,4 +32,6 @@ func consume() -> void:
 	swap = false
 	interact = false
 	use = false
+	lethal = false
+	tactical = false
 	look = Vector2.ZERO

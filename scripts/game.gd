@@ -131,7 +131,8 @@ func play(name: String, volume_db := 0.0, pitch := 1.0) -> void:
 # Commandes : clavier / souris, manette (n'importe quel numéro de manette), tactile à part.
 # Disposition de la manette proche de Warzone : A sauter, B accroupi (maintenir = couché),
 # L3 sprint (encore L3 en sprintant = sprint tactique), RT tirer, LT viser, X ramasser ou
-# recharger, Y changer d'arme, RB plaque d'armure, Select carte, Start pause.
+# recharger, Y changer d'arme, croix haut plaque d'armure, RB grenade, LB fumigène,
+# Select carte, Start pause.
 # ------------------------------------------------------------------------------------------------
 func _add(action: String, deadzone := 0.2) -> void:
 	if not InputMap.has_action(action):
@@ -186,7 +187,8 @@ func _setup_input() -> void:
 	_add("sprint"); _key("sprint", KEY_SHIFT); _btn("sprint", JOY_BUTTON_LEFT_STICK)
 	_add("crouch"); _key("crouch", KEY_C); _key("crouch", KEY_CTRL); _btn("crouch", JOY_BUTTON_B)
 	_add("drone"); _key("drone", KEY_F9)
-	# Combat : RT tirer, LT viser, X ramasser ou recharger, Y changer d'arme, RB plaque.
+	# Combat : RT tirer, LT viser, X ramasser ou recharger, Y changer d'arme, croix haut plaque,
+	# RB grenade, LB fumigène.
 	_add("fire", 0.3); _mouse("fire", MOUSE_BUTTON_LEFT); _axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
 	_add("ads", 0.3); _mouse("ads", MOUSE_BUTTON_RIGHT); _axis("ads", JOY_AXIS_TRIGGER_LEFT, 1.0)
 	# Manettes dont les gâchettes sont de simples boutons (Android : L2 / R2 = boutons 15 / 16).
@@ -196,7 +198,9 @@ func _setup_input() -> void:
 	_add("use"); _btn("use", JOY_BUTTON_X)
 	_add("swap"); _key("swap", KEY_1); _key("swap", KEY_2); _btn("swap", JOY_BUTTON_Y)
 	_mouse("swap", MOUSE_BUTTON_WHEEL_UP); _mouse("swap", MOUSE_BUTTON_WHEEL_DOWN)
-	_add("plate"); _key("plate", KEY_4); _key("plate", KEY_X); _btn("plate", JOY_BUTTON_RIGHT_SHOULDER)
+	_add("plate"); _key("plate", KEY_4); _key("plate", KEY_X); _btn("plate", JOY_BUTTON_DPAD_UP)
+	_add("lethal"); _key("lethal", KEY_G); _btn("lethal", JOY_BUTTON_RIGHT_SHOULDER)
+	_add("tactical"); _key("tactical", KEY_T); _btn("tactical", JOY_BUTTON_LEFT_SHOULDER)
 	_add("carte"); _key("carte", KEY_M); _key("carte", KEY_TAB); _btn("carte", JOY_BUTTON_BACK)
 	_add("pause"); _key("pause", KEY_ESCAPE); _key("pause", KEY_P); _btn("pause", JOY_BUTTON_START)
 	# Les claviers AZERTY : ZQSD en plus de WASD.

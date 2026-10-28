@@ -20,6 +20,7 @@ var rng := RandomNumberGenerator.new()
 var items: Array[Butin] = []
 var chests: Array[Coffre] = []
 var targets: Array[Cible] = []
+var shops: Array[Node3D] = []   # stations d'achat de l'île (interactives)
 
 
 func _pick_weighted(weights: Array) -> int:
@@ -81,6 +82,53 @@ func _random_item(pos: Vector3, stars: int) -> void:
 		spawn(Butin.make_argent(rng.randi_range(2, 8) * 50 * stars), pos, rng.randf() * TAU)
 
 
+## Vide l'île (nouvelle partie).
+func clear() -> void:
+	for b in items:
+		b.queue_free()
+	for c in chests:
+		c.queue_free()
+	for t in targets:
+		t.queue_free()
+	items.clear()
+	chests.clear()
+	targets.clear()
+	for n in get_children():
+		n.queue_free()
+
+
+## Sac de butin à la mort : armes, munitions, plaques et argent répandus au sol.
+func spawn_bag(at: Vector3, bag: Dictionary) -> void:
+	var p = _settle(at + Vector3(0, 1.0, 0))
+	var base: Vector3 = p if p != null else at
+	var counter := [0]   # les fonctions anonymes copient les nombres : on passe par un tableau
+	var spot := func() -> Vector3:
+		counter[0] += 1
+		var k: int = counter[0]
+		return base + Vector3.FORWARD.rotated(Vector3.UP, k * 1.3) * (0.6 + 0.25 * k)
+	for w in bag.armes:
+		spawn(Butin.make_arme(w), spot.call(), rng.randf() * TAU)
+	for kind in bag.munitions:
+		if int(bag.munitions[kind]) > 0:
+			spawn(Butin.make_munitions(kind, int(bag.munitions[kind])), spot.call(), rng.randf() * TAU)
+	if int(bag.plaques) > 0:
+		spawn(Butin.make_plaque(int(bag.plaques)), spot.call())
+	if int(bag.argent) > 0:
+		spawn(Butin.make_argent(int(bag.argent)), spot.call())
+
+
+## Caisse de largage de classe qui descend du ciel à cet endroit.
+func spawn_largage(at: Vector3) -> Coffre:
+	var p = _settle(at + Vector3(0, 30.0, 0), 60.0)
+	var c := Coffre.new()
+	c.largage = true
+	add_child(c)
+	c.global_position = p if p != null else at
+	c.drop_from(70.0)
+	chests.append(c)
+	return c
+
+
 # ------------------------------------------------------------------------------------------------
 # Remplissage de l'île
 # ------------------------------------------------------------------------------------------------
@@ -109,8 +157,8 @@ func populate(ile: Ile, seed_value: int) -> void:
 
 
 ## Pose un emplacement sur la surface juste en dessous (ou rien s'il est au-dessus du vide).
-func _settle(p: Vector3):
-	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.4, 0), p - Vector3(0, 1.5, 0), G.L_WORLD)
+func _settle(p: Vector3, depth := 1.5):
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.4, 0), p - Vector3(0, depth, 0), G.L_WORLD)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty() or hit.normal.y < 0.7:
 		return null

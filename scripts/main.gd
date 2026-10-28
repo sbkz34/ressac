@@ -1,15 +1,22 @@
 extends Node3D
-## Point d'entrée : construit l'île et lance un saut d'avion (ou la visite libre).
+## Point d'entrée : construit l'île, puis le lobby. Depuis le lobby : une partie de Résurgence
+## (Brume, réapparitions, achats, largages) ou l'entraînement libre au champ de tir.
 ## Options (après « -- ») :
 ##   --check              vérifications automatiques (sans écran), affiche « [check] OK »
-##   --tour --shots=DIR   prend des captures de chaque lieu dans DIR puis quitte
+##   --tour --shots=DIR   prend des captures dans DIR puis quitte
 
 var ile: Ile
 var player: Joueur
 var hud: Hud
+var lobby: Lobby
 var avion: Avion
 var pillage: Pillage
+var partie: Partie
 var rng := RandomNumberGenerator.new()
+var mode := "lobby"
+var _lobby_cam: Camera3D
+var _orbit := 0.0
+var _training_respawn := -1.0
 
 
 func _ready() -> void:
@@ -26,12 +33,29 @@ func _ready() -> void:
 	pillage = Pillage.new()
 	pillage.name = "Pillage"
 	add_child(pillage)
+	pillage.shops.assign(ile.shops)
 	player.arsenal.pillage = pillage
+	player.sante.died.connect(_on_player_died)
 	hud = Hud.new()
 	add_child(hud)
 	hud.attach(player)
+	hud.set_pillage(pillage)
 	hud.request_plane.connect(start_plane)
 	hud.request_visit.connect(start_visit)
+	hud.request_lobby.connect(show_lobby)
+	hud.request_settings_closed.connect(func(): lobby.show_menu())
+	lobby = Lobby.new()
+	add_child(lobby)
+	lobby.play.connect(start_partie)
+	lobby.training.connect(start_training)
+	lobby.settings.connect(func():
+		lobby.visible = false
+		hud.open_pause())
+	_lobby_cam = Camera3D.new()
+	_lobby_cam.far = 2200.0
+	_lobby_cam.fov = 60.0
+	add_child(_lobby_cam)
+	Loadouts.load_all()
 	# La physique doit avoir enregistré les formes avant de lancer des rayons.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -41,17 +65,108 @@ func _ready() -> void:
 	player.arsenal.starting_kit()
 	start_visit()
 	if G.check_mode:
+		_set_mode("entrainement")
 		_check()
 	elif G.tour_mode:
+		_set_mode("entrainement")
 		_tour()
 	else:
-		start_plane()
+		show_lobby()
+
+
+func _set_mode(m: String) -> void:
+	mode = m
+	hud.mode = m
+	var in_lobby := m == "lobby"
+	hud.visible = not in_lobby
+	lobby.visible = in_lobby
+	player.ui_block = in_lobby
+	_lobby_cam.current = in_lobby
+	player.cam.current = not in_lobby
+	if in_lobby:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func show_lobby() -> void:
+	_end_partie()
+	_drop_plane()
+	hud.close_panel()
+	get_tree().paused = false
+	_set_mode("lobby")
+	lobby.show_menu()
+
+
+func _end_partie() -> void:
+	if partie:
+		partie.stop()
+		partie.queue_free()
+		partie = null
+		hud.set_partie(null)
+
+
+## Une partie de Résurgence : île remise à neuf, Brume, saut d'avion.
+func start_partie() -> void:
+	_end_partie()
+	_set_mode("partie")
+	pillage.clear()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var seed_value := randi() if not G.check_mode else 4321
+	pillage.populate(ile, seed_value)
+	pillage.build_range(ile)
+	partie = Partie.new()
+	partie.name = "Partie"
+	add_child(partie)
+	partie.setup(player, pillage, ile)
+	partie.ended.connect(func(victory: bool, stats: Dictionary): hud.show_end(victory, stats))
+	hud.set_partie(partie)
+	player.arsenal.starting_kit()
+	partie.start(seed_value)
+	start_plane()
+
+
+## Entraînement : au champ de tir de la Batterie, sans Brume.
+func start_training() -> void:
+	_end_partie()
+	_set_mode("entrainement")
+	player.arsenal.starting_kit()
+	_spawn_at_range()
+
+
+func _spawn_at_range() -> void:
+	_drop_plane()
+	var cdt: Dictionary = G.data.champ_de_tir
+	var line := Vector3(float(cdt.x), 0, float(cdt.z)) - Vector3(-sin(deg_to_rad(float(cdt.cap))), 0, -cos(deg_to_rad(float(cdt.cap)))) * 2.5
+	line.y = ile.ground_at(line.x, line.z) + 0.1
+	player.spawn_at(line, deg_to_rad(float(cdt.cap)))
+	player.ui_block = false
+
+
+func _on_player_died() -> void:
+	# En entraînement, on revient au champ de tir au bout de 3 s.
+	if mode == "entrainement":
+		player.spectate(player.global_position)
+		_training_respawn = 3.0
+
+
+func _process(delta: float) -> void:
+	if mode == "lobby":
+		_orbit += delta * 0.04
+		_lobby_cam.global_position = Vector3(cos(_orbit) * 330.0, 150.0, sin(_orbit) * 330.0 - 10.0)
+		_lobby_cam.look_at(Vector3(0, 10, -10))
+	if _training_respawn > 0.0:
+		_training_respawn -= delta
+		if _training_respawn <= 0.0:
+			player.arsenal.starting_kit()
+			_spawn_at_range()
 
 
 func start_visit() -> void:
 	_drop_plane()
 	var dep: Dictionary = G.data.depart
 	player.spawn_at(Vector3(dep.x, ile.ground_at(dep.x, dep.z) + 0.1, dep.z), deg_to_rad(float(dep.cap)))
+	if mode != "lobby":
+		player.ui_block = false
 
 
 ## Un avion traverse l'île sur un trajet tiré au sort ; le joueur est sur la rampe.
@@ -62,6 +177,7 @@ func start_plane(angle := NAN, offset := NAN) -> void:
 	avion.name = "Avion"
 	add_child(avion)
 	avion.setup(route[0] if is_nan(angle) else angle, route[1] if is_nan(offset) else offset)
+	player.ui_block = false
 	player.board(avion)
 	hud.set_avion(avion)
 
@@ -462,6 +578,161 @@ func _check() -> void:
 	i.ads_held = false
 	i.fire_held = false
 
+	# ---------------------------------------------------------------------------------------
+	# Jalon 3 : chutes, équipements, achats, largages, Brume, réapparitions
+	# ---------------------------------------------------------------------------------------
+	# Chute de 18 m (haut du château d'eau) sans parachute : lourds dégâts, à travers l'armure.
+	var ci2: Dictionary = G.data.lieux.filter(func(l): return l.id == "citerne")[0]
+	var tank_top := Vector3(float(ci2.x), float(ci2.h) + 18.2, float(ci2.z) + 3.0)
+	for amorti in [false, true]:
+		ar.starting_kit()
+		if amorti:
+			ar.perks = ["amorti"]
+		player.spawn_at(tank_top, PI)
+		await _wait(0.2)
+		i.move = Vector2(0, -1)
+		await _until(func(): return not player.is_on_floor(), 2.0)
+		i.move = Vector2.ZERO
+		await _until(func(): return player.is_on_floor(), 4.0)
+		await _wait(0.1)
+		var hp := player.sante.hp
+		if amorti and hp < 99.9:
+			_fail("Amorti : %.0f de vie après la chute" % hp)
+		if not amorti and (hp > 30.0 or hp <= 0.0 or player.sante.armor < 49.0):
+			_fail("chute de 18 m : %.0f de vie, %.0f d'armure" % [hp, player.sante.armor])
+	ar.starting_kit()
+
+	# Grenade lancée au pied du mannequin à 10 m.
+	var cdt2: Dictionary = G.data.champ_de_tir
+	var line2 := Vector3(float(cdt2.x), 0, float(cdt2.z))
+	line2.y = ile.ground_at(line2.x, line2.z) + 0.1
+	player.spawn_at(line2, deg_to_rad(float(cdt2.cap)))
+	await _wait(0.2)
+	var g10: Cible = pillage.targets.filter(func(t): return float(t.get_meta("distance")) == 10.0)[0]
+	g10.sante.reset(3)
+	ar.letal = "grenade"
+	ar.letal_n = 1
+	player.look_at_point(g10.global_position)
+	i.lethal = true
+	await _wait(3.2)
+	if ar.letal_n != 0 or g10.sante.armor > 149.0:
+		_fail("grenade : il en reste %d, armure du mannequin %.0f" % [ar.letal_n, g10.sante.armor])
+
+	# Station d'achat du Lazaret : gilet de plaques, puis un largage de classe.
+	var station: Node3D = ile.shops[0]
+	ar.starting_kit()
+	ar.argent = 6000
+	player.spawn_at(station.global_position + Vector3(0, 0.1, 1.6), 0.0)
+	await _wait(0.2)
+	if ar.target_item != station:
+		_fail("station d'achat : pas proposée (%s)" % ar.interact_label())
+	await _press("interact")
+	if hud._panel_kind != "achat":
+		_fail("station d'achat : la fenêtre ne s'ouvre pas")
+	hud.close_panel()
+	var p0 := ar.plates
+	Boutique.buy(ar, "gilet", station, pillage)
+	if ar.plates != mini(p0 + 3, ar.plates_max()) or ar.argent != 5100:
+		_fail("achat du gilet : %d plaques, %d €" % [ar.plates, ar.argent])
+	if not Boutique.buy(ar, "largage", station, pillage) or ar.argent != 600:
+		_fail("achat du largage : %d €" % ar.argent)
+	if Boutique.buy(ar, "masque", station, pillage):
+		_fail("achat sans assez d'argent accepté")
+	var crate: Coffre = pillage.chests[pillage.chests.size() - 1]
+	if not crate.largage:
+		_fail("largage : pas de caisse")
+	await _until(func(): return crate.can_open(), 15.0)
+	var cfront := Vector3(crate.global_position.x, 0, crate.global_position.z) - Vector3(station.global_position.x, 0, station.global_position.z)
+	player.spawn_at(crate.global_position + Vector3(0, 0.1, 0) - cfront.normalized() * 1.6, atan2(-cfront.x, -cfront.z))
+	await _wait(0.2)
+	if ar.target_item != crate:
+		_fail("largage : caisse pas proposée (%s)" % ar.interact_label())
+	await _press("interact")
+	if hud._panel_kind != "classe":
+		_fail("largage : pas de choix de classe")
+	else:
+		var buttons := hud._panel_box.get_children().filter(func(n): return n is Button)
+		buttons[0].pressed.emit()
+	var d0 := Loadouts.get_one(0)
+	if ar.current().get("id", "") != d0.principale or int(ar.current().get("rarete", 0)) != Loadouts.RARETE or ar.perks != d0.atouts or player.ui_block:
+		_fail("classe : %s, atouts %s" % [ar.current(), ar.perks])
+	if crate.can_open():
+		_fail("largage : la caisse s'ouvre encore")
+
+	# Partie accélérée : cercles emboîtés, largage offert en phase 2, dégâts de la Brume,
+	# mort et réapparition, plus de réapparition en phase 5.
+	await start_partie()
+	partie.brume.time_scale = 40.0
+	var nested_ok := [true]
+	var circles := []
+	partie.brume.phase_started.connect(func(n):
+		var b := partie.brume
+		circles.append([n, b.center, b.radius, b.next_center, b.next_radius])
+		if b.center.distance_to(b.next_center) + b.next_radius > b.radius + 0.05:
+			nested_ok[0] = false)
+	var ended_with := []
+	partie.ended.connect(func(v: bool, _s: Dictionary): ended_with.append(v))
+	player.spawn_at(Vector3(0, ile.ground_at(0, -15) + 0.1, -15), 0.0)
+	var drops0 := pillage.chests.filter(func(c): return c.largage).size()
+	await _until(func(): return partie.brume.phase >= 2, 10.0)
+	await _wait(0.1)
+	if pillage.chests.filter(func(c): return c.largage).size() != drops0 + 1:
+		_fail("phase 2 : pas de largage offert")
+	await _until(func(): return partie.brume.phase >= 3 and partie.brume.closing, 20.0)
+	var b := partie.brume
+	var out := b.center + (Vector2(0, -15) - b.center).normalized() * (b.radius + 25.0)
+	if (Vector2(0, -15) - b.center).length() < 1.0:
+		out = b.center + Vector2(b.radius + 25.0, 0)
+	player.spawn_at(Vector3(out.x, ile.ground_at(out.x, out.y) + 0.2, out.y), 0.0)
+	player.sante.reset(3)
+	await _wait(1.0)
+	if not player.in_gas or player.sante.hp > 99.0 or player.sante.armor < 149.0:
+		_fail("Brume : dans la Brume %s, %.0f de vie, %.0f d'armure" % [player.in_gas, player.sante.hp, player.sante.armor])
+	# Mort : sac au sol, compte à rebours, retour en chute libre dans la zone.
+	var items0 := pillage.items.size()
+	var dead_at := player.global_position
+	player.sante.take(500.0, "torse", "brume", true)
+	await _wait(0.1)
+	if partie.respawn_left <= 0.0 or pillage.items.size() <= items0:
+		_fail("mort : réapparition %.1f s, %d objets du sac" % [partie.respawn_left, pillage.items.size() - items0])
+	await _until(func(): return partie.respawn_left < 0.0, 40.0)
+	await _wait(0.1)
+	var back := player.global_position
+	if player.etat != Joueur.Etat.CHUTE_LIBRE or player.sante.dead or ar.current().get("id", "") != "p9":
+		_fail("réapparition : état %d, arme %s" % [player.etat, ar.current()])
+	if Vector2(back.x, back.z).distance_to(partie.last_drop.center) > float(partie.last_drop.radius) + 1.0:
+		_fail("réapparition hors de la zone sûre")
+	if Vector2(back.x, back.z).distance_to(Vector2(dead_at.x, dead_at.z)) < 1.0 and back.y < 100.0:
+		_fail("réapparition : pas de largage en altitude")
+	await _until(func(): return player.etat == Joueur.Etat.SOL, 60.0)
+	player.sante.invulnerable = true
+	await _until(func(): return partie.brume.phase >= Partie.REDEPLOY_PHASE, 60.0)
+	player.sante.invulnerable = false
+	player.sante.take(500.0, "torse", "brume", true)
+	await _wait(0.1)
+	if partie.running or ended_with != [false]:
+		_fail("phase 5 : la mort devrait finir la partie (%s)" % [ended_with])
+	if not nested_ok[0] or circles.size() < 5:
+		_fail("Brume : cercles mal emboîtés (%d phases vues)" % circles.size())
+	hud.close_panel()
+	# Victoire : rester en vie jusqu'à la fermeture complète.
+	await start_partie()
+	partie.brume.time_scale = 300.0
+	var won := []
+	partie.ended.connect(func(v: bool, _s: Dictionary): won.append(v))
+	player.spawn_at(Vector3(0, ile.ground_at(0, -15) + 0.1, -15), 0.0)
+	player.sante.invulnerable = true
+	await _until(func(): return not partie.running, 30.0)
+	player.sante.invulnerable = false
+	if won != [true] or hud._panel_kind != "fin":
+		_fail("victoire : %s" % [won])
+	show_lobby()
+	await _wait(0.1)
+	if mode != "lobby" or not lobby.visible or partie != null:
+		_fail("retour au lobby")
+	_set_mode("entrainement")
+	player.ui_block = false
+
 	# Interface : avec une grande taille et une marge, le cadre reste dans l'écran.
 	G.settings.hud_scale = 1.3
 	G.settings.hud_margin = 0.05
@@ -591,6 +862,48 @@ func _tour() -> void:
 		await _wait(0.2)
 		await _shot(dir, "28_butin")
 	player.scripted = null
+	# Jalon 3 : lobby, classes, Brume, achats, largage, fin de partie.
+	show_lobby()
+	await _shot(dir, "30_lobby")
+	lobby._show_classes()
+	await _shot(dir, "31_classes")
+	lobby._edit(0)
+	await _shot(dir, "31b_classe")
+	await start_partie()
+	partie.brume.time_scale = 80.0
+	await _until(func(): return partie.brume.phase >= 3 and partie.brume.closing, 30.0)
+	partie.brume.time_scale = 0.0
+	var b := partie.brume
+	var dir2 := (Vector2(0, -15) - b.center).normalized()
+	if dir2 == Vector2.ZERO:
+		dir2 = Vector2(1, 0)
+	var inside := b.center + dir2 * (b.radius - 25.0)
+	player.spawn_at(Vector3(inside.x, ile.ground_at(inside.x, inside.y) + 0.1, inside.y), atan2(-dir2.x, -dir2.y))
+	player.sante.invulnerable = true
+	await _wait(0.3)
+	await _shot(dir, "32_brume")
+	var outside := b.center + dir2 * (b.radius + 20.0)
+	player.spawn_at(Vector3(outside.x, ile.ground_at(outside.x, outside.y) + 0.1, outside.y), atan2(dir2.x, dir2.y))
+	await _wait(0.3)
+	await _shot(dir, "33_dans_la_brume")
+	hud.toggle_map()
+	await _shot(dir, "34_carte_brume")
+	hud.toggle_map()
+	var station: Node3D = ile.shops[0]
+	player.spawn_at(station.global_position + Vector3(0, 0.1, 1.6), 0.0)
+	player.arsenal.argent = 5200
+	hud.open_shop(station)
+	await _shot(dir, "35_boutique")
+	hud.close_panel()
+	var crate := pillage.spawn_largage(player.global_position + Vector3(4, 0, 0))
+	hud.open_loadout_choice(crate)
+	await _shot(dir, "36_largage")
+	hud.close_panel()
+	hud.show_end(true, {"temps": 612.0, "phase": 6, "morts": 2, "argent": 3150})
+	await _shot(dir, "37_fin")
+	hud.close_panel()
+	player.sante.invulnerable = false
+	hud.mode = "partie"
 	hud.open_pause()
 	await _shot(dir, "24_pause")
 	get_tree().quit()
