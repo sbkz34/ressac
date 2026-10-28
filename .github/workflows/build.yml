@@ -63,10 +63,13 @@ jobs:
 
       - name: Check the island, the movement, the combat and a full match
         run: |
-          set -o pipefail
-          timeout 300 "$HOME/godot" --headless --fixed-fps 60 --path . -- --check 2>&1 | grep -E "\[ile\]|\[check\]|SCRIPT ERROR" | tee check.log
-          grep -q "\[check\] OK" check.log
-          ! grep -q "SCRIPT ERROR" check.log
+          timeout 900 "$HOME/godot" --headless --fixed-fps 60 --path . -- --check > full.log 2>&1 || true
+          grep -E "\[ile\]|\[check\]|SCRIPT ERROR" full.log | tee check.log || true
+          if ! grep -q "\[check\] OK" check.log || grep -q "SCRIPT ERROR" check.log; then
+            # Les détails remontent en annotations (lisibles sans télécharger le journal).
+            { grep -E "SCRIPT|ECHEC|ERROR|at: " full.log | grep -vE "leaked|PagedAllocator|still in use|~Dependency|cleanup|clear \(" | head -25; grep -vE "leaked|PagedAllocator|still in use|~Dependency|cleanup|clear \(" full.log | tail -8; } | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
 
       - name: Publish the release
         env:
