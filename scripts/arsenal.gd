@@ -43,6 +43,8 @@ var target_item: Node3D        # butin (arme) ou coffre à portée de main
 var assist_target: Node3D
 var shots_fired := 0
 var pillage: Pillage
+var is_bot := false
+var _scan_t := 0.0
 
 var _fire_cd := 0.0
 var _swap_t := 0.0
@@ -55,10 +57,11 @@ var _was_ads := false
 var _dry := false
 
 
-func setup(j: Joueur, hitboxes: Array[Area3D]) -> void:
+func setup(j: Joueur, hitboxes: Array[Area3D], bot := false) -> void:
 	joueur = j
 	sante = j.sante
-	view = WeaponView.new()
+	is_bot = bot
+	view = VueVide.new() if bot else WeaponView.new()
 	view.name = "VueArme"
 	j.cam.add_child(view)
 	_exclude = [j.get_rid()]
@@ -66,6 +69,15 @@ func setup(j: Joueur, hitboxes: Array[Area3D]) -> void:
 		_exclude.append(a.get_rid())
 	for k in Armes.MUNITIONS:
 		reserve[k] = 0
+
+
+## Son d'une action : au joueur directement ; pour un bot, seulement les sons qui s'entendent
+## de loin (tirs), placés à sa position.
+func _snd(name: String, vol := 0.0, pitch := 1.0, audible := false) -> void:
+	if not is_bot:
+		G.play(name, vol, pitch)
+	elif audible:
+		G.play_at(name, joueur.global_position + Vector3(0, 1.5, 0), vol + 6.0, pitch)
 
 
 func has_perk(id: String) -> bool:
@@ -200,7 +212,11 @@ func simulate(i: Intentions, delta: float) -> void:
 		a = Armes.info(w.id)
 
 	# Action : ramasser / ouvrir ; le même bouton recharge quand il n'y a rien à portée (manette).
-	target_item = _find_interactable()
+	# (Les bots ne cherchent autour d'eux que de temps en temps : ils sont nombreux.)
+	_scan_t -= delta
+	var scan := not is_bot or _scan_t <= 0.0 or i.interact
+	if scan:
+		target_item = _find_interactable()
 	if (i.interact or i.use) and target_item:
 		_interact(target_item)
 	elif i.reload or (i.use and target_item == null):
@@ -217,7 +233,7 @@ func simulate(i: Intentions, delta: float) -> void:
 			var cam := joueur.cam
 			Lancer.throw(get_tree().current_scene, k, cam.global_position - cam.global_basis.z * 0.5,
 				-cam.global_basis.z, joueur, _exclude)
-			G.play("knife", -8.0, 0.8)
+			_snd("knife", -8.0, 0.8)
 			changed.emit()
 	if gas_mask > 0.0 and joueur.in_gas:
 		gas_mask = maxf(0.0, gas_mask - delta)
@@ -227,14 +243,14 @@ func simulate(i: Intentions, delta: float) -> void:
 		if plate_t <= 0.0:
 			reloading = false
 			view.play_anim("swap", plate_time())
-			G.play("mag_out", -6.0, 0.7)
+			_snd("mag_out", -6.0, 0.7)
 		plate_t += delta
 		if joueur.sprinting:
 			joueur.stop_sprint()
 		if plate_t >= plate_time():
 			if sante.insert_plate():
 				plates -= 1
-				G.play("plank_place", -3.0, 1.3)
+				_snd("plank_place", -3.0, 1.3)
 				changed.emit()
 			plate_t = 0.0
 	else:
@@ -259,7 +275,7 @@ func simulate(i: Intentions, delta: float) -> void:
 			if not reloading and int(reserve[a.munition]) > 0:
 				start_reload()
 			elif not _dry and not reloading:
-				G.play("dryfire", -6.0)
+				_snd("dryfire", -6.0)
 				_dry = true
 		elif reloading and trigger:
 			reloading = false   # tirer interrompt le rechargement s'il reste des balles
@@ -269,8 +285,11 @@ func simulate(i: Intentions, delta: float) -> void:
 			_semi_ready = false
 
 	_update_spread(w, a)
-	_update_assist()
-	_auto_pickup()
+	if not is_bot:
+		_update_assist()
+	if scan:
+		_auto_pickup()
+		_scan_t = 0.2
 
 
 func _update_spread(w: Dictionary, a: Dictionary) -> void:
@@ -312,7 +331,7 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 				var zone: String = col.get_meta("zone")
 				var on_armor := s.armor > 0.0
 				var dmg := Armes.degats(w.id, origin.distance_to(end), zone)
-				total += s.take(dmg, zone)
+				total += s.take(dmg, zone, "balle", false, joueur)
 				var kind := "corps"
 				if s.dead:
 					kind = "elimination"
@@ -328,8 +347,9 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 		Fx.tracer(get_tree().current_scene, view.muzzle_global(), end)
 	if best != "":
 		hit.emit(best, total)
-		G.play("killmarker" if best == "elimination" else "hitmarker", -4.0 if best == "elimination" else -8.0)
-	G.play(String(a.son), -5.0, randf_range(0.96, 1.04))
+		if not is_bot:
+			_snd("killmarker" if best == "elimination" else "hitmarker", -4.0 if best == "elimination" else -8.0)
+	_snd(String(a.son), -5.0, randf_range(0.96, 1.04), true)
 	view.shot(float(a.recul))
 	_bloom = minf(_bloom + 0.35 * float(a.recul), 4.0)
 	# Recul : la visée monte, avec un peu de dérive latérale.
@@ -464,7 +484,7 @@ func _interact(t: Node3D) -> void:
 	reloading = false
 	_swap_t = SWAP_TIME
 	view.set_weapon(current())
-	G.play("buy", -8.0)
+	_snd("buy", -8.0)
 	notice.emit(Armes.nom_complet(w))
 	changed.emit()
 
@@ -511,7 +531,7 @@ func _auto_pickup() -> void:
 				argent = mini(Armes.ARGENT_MAX, argent + gain)
 				notice.emit("+%d €" % gain)
 				b.quantite = 0
-		G.play("powerup_pick", -14.0, 1.4)
+		_snd("powerup_pick", -14.0, 1.4)
 		if b.quantite <= 0:
 			pillage.remove(b)
 		changed.emit()
@@ -527,21 +547,32 @@ func _update_assist() -> void:
 	var cam := joueur.cam
 	var fwd := -cam.global_basis.z
 	var best := INF
-	for t in get_tree().get_nodes_in_group("cible"):
-		if not t.alive():
+	for c in get_tree().get_nodes_in_group("combattant"):
+		var t := c as Node3D
+		if t == joueur or not _assist_ok(t):
 			continue
-		var to: Vector3 = t.aim_point() - cam.global_position
+		var to: Vector3 = Bot.aim_point(t) - cam.global_position
 		var dist := to.length()
 		if dist > 120.0:
 			continue
 		var ang := rad_to_deg(fwd.angle_to(to))
 		var cone := maxf(ASSIST_CONE * 0.6, rad_to_deg(atan(1.2 / dist)))
-		if ang < maxf(cone, SNAP_CONE) and ang < best and _visible(cam.global_position, t.aim_point()):
+		if ang < maxf(cone, SNAP_CONE) and ang < best and _visible(cam.global_position, Bot.aim_point(t)):
 			best = ang
 			assist_target = t
 	# En épaulant : la visée se cale sur la cible proche (comme sur console).
 	if assist_target and _ads_pressed_t < 0.2 and ads > 0.15 and G.input_mode != "kbm":
-		joueur.snap_towards(assist_target.aim_point(), 0.45)
+		joueur.snap_towards(Bot.aim_point(assist_target), 0.45)
+
+
+## Mannequins et adversaires vivants, au sol ou sous la voile.
+func _assist_ok(t: Node3D) -> bool:
+	if t is Cible:
+		return (t as Cible).alive()
+	if t is Joueur:
+		var jj := t as Joueur
+		return not jj.sante.dead and jj.etat != Joueur.Etat.AVION and jj.etat != Joueur.Etat.DRONE
+	return false
 
 
 func _visible(from: Vector3, to: Vector3) -> bool:
@@ -553,7 +584,7 @@ func _visible(from: Vector3, to: Vector3) -> bool:
 func look_scale() -> float:
 	if assist_target == null or G.input_mode == "kbm":
 		return 1.0
-	var to: Vector3 = assist_target.aim_point() - joueur.cam.global_position
+	var to: Vector3 = Bot.aim_point(assist_target) - joueur.cam.global_position
 	var ang := rad_to_deg((-joueur.cam.global_basis.z).angle_to(to))
 	return ASSIST_SLOW if ang < ASSIST_CONE else 1.0
 

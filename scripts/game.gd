@@ -12,6 +12,8 @@ const L_HITBOX := 4    # zones de touche des combattants (tête, torse, jambes)
 var input_mode := "kbm"   # "kbm", "pad" ou "touch"
 var tour_mode := false
 var check_mode := false
+var bake_nav := false
+var sim_mode := false          # --sim : partie accélérée de bots sans écran (réglages, mesures)
 var screenshot_dir := ""
 var data: Dictionary = {}
 
@@ -23,12 +25,16 @@ var settings := {
 	"sens_touch": 1.0,
 	"sens_mouse": 1.0,
 	"show_fps": true,
+	"bots": 15,             # adversaires dans une partie (0 à 23)
+	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
 }
 const SETTINGS_PATH := "user://settings.cfg"
 
 var _sounds := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player := 0
+var _players3d: Array[AudioStreamPlayer3D] = []
+var _next_3d := 0
 const ANY_DEVICE := -1
 
 
@@ -38,6 +44,11 @@ func _ready() -> void:
 		if a == "--tour":
 			tour_mode = true
 		elif a == "--check":
+			check_mode = true
+		elif a == "--bake-nav":
+			bake_nav = true
+		elif a == "--sim":
+			sim_mode = true
 			check_mode = true
 		elif a.begins_with("--shots="):
 			screenshot_dir = a.substr(8)
@@ -49,6 +60,14 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
+	# Sons des autres combattants : placés dans l'espace, atténués avec la distance.
+	for i in 12:
+		var p3 := AudioStreamPlayer3D.new()
+		p3.unit_size = 12.0
+		p3.max_distance = 320.0
+		p3.attenuation_filter_cutoff_hz = 6000.0
+		add_child(p3)
+		_players3d.append(p3)
 	if OS.has_feature("mobile"):
 		input_mode = "touch"
 
@@ -113,6 +132,19 @@ func sound(name: String) -> AudioStream:
 		var path := "res://assets/sfx/%s.wav" % name
 		_sounds[name] = load(path) if ResourceLoader.exists(path) else null
 	return _sounds[name]
+
+
+func play_at(name: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
+	var s := sound(name)
+	if s == null:
+		return
+	var p := _players3d[_next_3d]
+	_next_3d = (_next_3d + 1) % _players3d.size()
+	p.stream = s
+	p.global_position = pos
+	p.volume_db = volume_db
+	p.pitch_scale = pitch
+	p.play()
 
 
 func play(name: String, volume_db := 0.0, pitch := 1.0) -> void:

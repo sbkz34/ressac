@@ -1,9 +1,11 @@
 extends Node3D
 ## Point d'entrée : construit l'île, puis le lobby. Depuis le lobby : une partie de Résurgence
-## (Brume, réapparitions, achats, largages) ou l'entraînement libre au champ de tir.
+## contre des bots (Brume, réapparitions, achats, largages) ou l'entraînement libre au champ de tir.
 ## Options (après « -- ») :
 ##   --check              vérifications automatiques (sans écran), affiche « [check] OK »
 ##   --tour --shots=DIR   prend des captures dans DIR puis quitte
+##   --bake-nav           recalcule le maillage de navigation des bots (assets/map/navigation.res)
+##   --sim [--scale=N]    partie de 23 bots accélérée, sans écran (réglages) ; --sim --visee : précision
 
 var ile: Ile
 var player: Joueur
@@ -12,11 +14,13 @@ var lobby: Lobby
 var avion: Avion
 var pillage: Pillage
 var partie: Partie
+var nav: NavIle
 var rng := RandomNumberGenerator.new()
 var mode := "lobby"
 var _lobby_cam: Camera3D
 var _orbit := 0.0
 var _training_respawn := -1.0
+var bots: Array[Joueur] = []
 
 
 func _ready() -> void:
@@ -27,6 +31,19 @@ func _ready() -> void:
 	add_child(ile)
 	ile.build()
 	print("[ile] construite en %d ms : %d bâtiments, %d rampes" % [Time.get_ticks_msec() - t0, ile.stats.batiments, ile.stats.rampes])
+	nav = NavIle.new()
+	nav.name = "Navigation"
+	add_child(nav)
+	if G.bake_nav:
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		var t1 := Time.get_ticks_msec()
+		var err := nav.bake_from(ile)
+		var nm := nav.navigation_mesh
+		print("[nav] %d polygones, %d sommets, %d ms, enregistrement : %s" % [nm.get_polygon_count(), nm.get_vertices().size(), Time.get_ticks_msec() - t1, error_string(err)])
+		get_tree().quit(0 if err == OK else 1)
+		return
+	nav.load_mesh()
 	player = Joueur.new()
 	player.name = "Joueur"
 	add_child(player)
@@ -64,7 +81,9 @@ func _ready() -> void:
 	print("[butin] %d objets, %d coffres, %d mannequins" % [pillage.items.size(), pillage.chests.size(), pillage.targets.size()])
 	player.arsenal.starting_kit()
 	start_visit()
-	if G.check_mode:
+	if G.sim_mode:
+		_sim()
+	elif G.check_mode:
 		_set_mode("entrainement")
 		_check()
 	elif G.tour_mode:
@@ -102,10 +121,42 @@ func _end_partie() -> void:
 		partie.queue_free()
 		partie = null
 		hud.set_partie(null)
+	_clear_bots()
 
 
-## Une partie de Résurgence : île remise à neuf, Brume, saut d'avion.
-func start_partie() -> void:
+func _clear_bots() -> void:
+	for b in bots:
+		if is_instance_valid(b):
+			b.queue_free()
+	bots.clear()
+	Bot.reset_claims()
+
+
+## Les adversaires : des combattants comme le joueur, pilotés chacun par un Bot.
+func _spawn_bots(n: int, level: int, seed_value: int) -> void:
+	var used: Array = []
+	for k in n:
+		var b := Joueur.new()
+		b.is_bot = true
+		b.nom = Bot.random_name(rng, used)
+		used.append(b.nom)
+		b.name = "Bot_%d" % k
+		add_child(b)
+		b.spawn_at(Vector3(0, -50 - k * 3, 0), 0.0)
+		b.arsenal.pillage = pillage
+		b.arsenal.starting_kit()
+		var brain := Bot.new()
+		brain.name = "Bot"
+		b.add_child(brain)
+		brain.setup(b, nav, partie, pillage, ile, level, seed_value + k * 7919)
+		if partie:
+			partie.add_combatant(b)
+		bots.append(b)
+
+
+## Une partie de Résurgence : île remise à neuf, Brume, bots, saut d'avion.
+## `n_bots` / `level` : -1 pour les réglages du lobby.
+func start_partie(n_bots := -1, level := -1) -> void:
 	_end_partie()
 	_set_mode("partie")
 	pillage.clear()
@@ -119,6 +170,8 @@ func start_partie() -> void:
 	add_child(partie)
 	partie.setup(player, pillage, ile)
 	partie.ended.connect(func(victory: bool, stats: Dictionary): hud.show_end(victory, stats))
+	var n := int(G.settings.bots) if n_bots < 0 else n_bots
+	_spawn_bots(clampi(n, 0, 23), int(G.settings.difficulte) if level < 0 else level, seed_value)
 	hud.set_partie(partie)
 	player.arsenal.starting_kit()
 	partie.start(seed_value)
@@ -150,6 +203,8 @@ func _on_player_died() -> void:
 
 
 func _process(delta: float) -> void:
+	if _lobby_cam == null:
+		return
 	if mode == "lobby":
 		_orbit += delta * 0.04
 		_lobby_cam.global_position = Vector3(cos(_orbit) * 330.0, 150.0, sin(_orbit) * 330.0 - 10.0)
@@ -179,6 +234,8 @@ func start_plane(angle := NAN, offset := NAN) -> void:
 	avion.setup(route[0] if is_nan(angle) else angle, route[1] if is_nan(offset) else offset)
 	player.ui_block = false
 	player.board(avion)
+	for b in bots:
+		b.board(avion)
 	hud.set_avion(avion)
 
 
@@ -254,6 +311,23 @@ func _check() -> void:
 		if not w.begins_with(String(l.nom)):
 			_fail("nom de lieu : %s" % w)
 
+	# Navigation des bots : du Lazaret, on rejoint chaque lieu à pied ; on monte les escaliers.
+	var from := nav.closest(Vector3(0, 15, -10))
+	for l in G.data.lieux:
+		var target := nav.closest(Vector3(float(l.x), float(l.h) + 0.5, float(l.z)))
+		var path := nav.path(from, target)
+		# (la cible peut tomber dans un bâtiment plein, comme le phare : on accepte d'arriver à côté)
+		if path.size() < 2 or path[path.size() - 1].distance_to(target) > 6.0:
+			_fail("navigation : pas de chemin vers %s (%d points)" % [l.nom, path.size()])
+		elif target.distance_to(Vector3(float(l.x), float(l.h), float(l.z))) > 25.0:
+			_fail("navigation : %s loin du maillage (%.0f m)" % [l.nom, target.distance_to(Vector3(float(l.x), float(l.h), float(l.z)))])
+	var port2: Dictionary = G.data.lieux.filter(func(l): return l.id == "port")[0]
+	var upstairs := Vector3(float(port2.x) + 20.0 - 2.5, float(port2.h) + 3.2 + 0.1, float(port2.z) - 8.0 + 2.0)
+	var up_target := nav.closest(upstairs)
+	var up_path := nav.path(nav.closest(Vector3(float(port2.x) + 20.0, float(port2.h), float(port2.z) - 2.0)), up_target)
+	if absf(up_target.y - upstairs.y) > 0.6 or up_path.size() < 2 or up_path[up_path.size() - 1].distance_to(up_target) > 1.0:
+		_fail("navigation : l'étage de la capitainerie n'est pas joignable (%s)" % up_target)
+
 	# Marche depuis le départ.
 	var start := player.global_position
 	i.move = Vector2(0, -1)
@@ -266,7 +340,7 @@ func _check() -> void:
 	# Escalier de la capitainerie du Port.
 	var port: Dictionary = G.data.lieux.filter(func(l): return l.id == "port")[0]
 	var base := Vector3(float(port.x) + 20.0, float(port.h), float(port.z) - 8.0)
-	player.spawn_at(base + Vector3(4.05, 0.1, -4.0 + 0.65), PI)
+	player.spawn_at(base + Vector3(3.85, 0.1, -4.0 + 0.65), PI)
 	await _wait(0.2)
 	i.move = Vector2(0, -1)
 	await _wait(2.6)
@@ -661,7 +735,7 @@ func _check() -> void:
 
 	# Partie accélérée : cercles emboîtés, largage offert en phase 2, dégâts de la Brume,
 	# mort et réapparition, plus de réapparition en phase 5.
-	await start_partie()
+	await start_partie(0)
 	partie.brume.time_scale = 40.0
 	var nested_ok := [true]
 	var circles := []
@@ -716,7 +790,7 @@ func _check() -> void:
 		_fail("Brume : cercles mal emboîtés (%d phases vues)" % circles.size())
 	hud.close_panel()
 	# Victoire : rester en vie jusqu'à la fermeture complète.
-	await start_partie()
+	await start_partie(0)
 	partie.brume.time_scale = 300.0
 	var won := []
 	partie.ended.connect(func(v: bool, _s: Dictionary): won.append(v))
@@ -732,6 +806,11 @@ func _check() -> void:
 		_fail("retour au lobby")
 	_set_mode("entrainement")
 	player.ui_block = false
+
+	# ---------------------------------------------------------------------------------------
+	# Jalon 4 : bots
+	# ---------------------------------------------------------------------------------------
+	var bot_stats := await _check_bots()
 
 	# Interface : avec une grande taille et une marge, le cadre reste dans l'écran.
 	G.settings.hud_scale = 1.3
@@ -751,7 +830,208 @@ func _check() -> void:
 	player.scripted = null
 	if _errors.is_empty():
 		print("[check] OK (glissade %.1f m/s, cancel %.1f m/s, escalier %.1f m, parachute ouvert à %.0f m, Faucon %d balles, %d objets au sol)" % [slide_speed, cancel_speed, climbed, opened_at, killed_in, pillage.items.size()])
+		print("[check] bots : %s" % bot_stats)
 	get_tree().quit(0 if _errors.is_empty() else 1)
+
+
+func _check_bots() -> String:
+	var out := []
+	var lz: Dictionary = G.data.lieux.filter(func(l): return l.id == "lazaret")[0]
+	var lzp := Vector3(float(lz.x), float(lz.h) + 0.2, float(lz.z))
+	player.scripted = Intentions.new()
+	player.spawn_at(Vector3(300, 40, 300), 0.0)   # à l'écart
+	pillage.clear()
+	await _wait(0.1)
+	pillage.populate(ile, 1234)
+	pillage.build_range(ile)
+
+	# Pillage : un bot posé au Lazaret avec le kit de départ trouve vite une meilleure arme.
+	_spawn_bots(1, 1, 11)
+	var b0 := bots[0]
+	b0.spawn_at(lzp, 0.0)
+	var t_loot := await _until(func(): return Bot.weapon_score(b0.arsenal.slots[0]) > 2.0 or Bot.weapon_score(b0.arsenal.slots[1]) > 2.0, 30.0)
+	if t_loot < 0.0:
+		_fail("bot : pas d'arme ramassée en 30 s (%s, %s)" % [b0.arsenal.slots, (b0.get_node("Bot") as Bot).state])
+	out.append("arme en %.1f s" % t_loot)
+	_clear_bots()
+	await _wait(0.1)
+
+	# Tir : au champ de tir, un bot armé d'un Faucon abat un mannequin (armure complète).
+	var cdt: Dictionary = G.data.champ_de_tir
+	var line := Vector3(float(cdt.x), 0, float(cdt.z))
+	line.y = ile.ground_at(line.x, line.z) + 0.1
+	var downed := [0]
+	for t in pillage.targets:
+		t.sante.reset(3)
+		t.sante.died.connect(func(): downed[0] += 1)
+	_spawn_bots(1, 1, 12)
+	b0 = bots[0]
+	var brain0 := b0.get_node("Bot") as Bot
+	brain0.target_dummies = true
+	b0.spawn_at(line, deg_to_rad(float(cdt.cap)) + 0.4)
+	b0.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
+	b0.arsenal.reserve["fusil"] = 240
+	var t_dummy := await _until(func(): return downed[0] >= 1, 12.0)
+	if t_dummy < 0.0:
+		_fail("bot : aucun mannequin abattu (%d tirs, état %s)" % [b0.arsenal.shots_fired, brain0.state])
+	out.append("mannequin en %.1f s (%d tirs)" % [t_dummy, b0.arsenal.shots_fired])
+	_clear_bots()
+	await _wait(0.1)
+
+	# Duel à 30 m dans la cour du Lazaret : l'un des deux tombe, l'élimination revient à l'autre.
+	_spawn_bots(2, 1, 13)
+	var duel := [bots[0], bots[1]]
+	duel[0].spawn_at(lzp + Vector3(-15, 0, -4), -PI / 2)
+	duel[1].spawn_at(lzp + Vector3(15, 0, -4), PI / 2)
+	for d in duel:
+		d.arsenal.slots = [Armes.nouvelle("faucon", 1), {}]
+		d.arsenal.reserve["fusil"] = 240
+		d.sante.reset(3)
+	var t_duel := await _until(func(): return duel[0].sante.dead or duel[1].sante.dead, 20.0)
+	if t_duel < 0.0:
+		_fail("duel : personne ne tombe en 20 s (%s / %s)" % [(duel[0].get_node("Bot") as Bot).state, (duel[1].get_node("Bot") as Bot).state])
+	else:
+		var loser: Joueur = duel[0] if duel[0].sante.dead else duel[1]
+		var winner: Joueur = duel[1] if loser == duel[0] else duel[0]
+		if loser.sante.last_attacker != winner:
+			_fail("duel : élimination mal attribuée")
+		out.append("duel en %.1f s" % t_duel)
+	_clear_bots()
+	await _wait(0.1)
+
+	# Partie : un bot hors du prochain cercle rejoint la zone sûre ; le joueur abat un bot,
+	# l'élimination lui est comptée et part dans le fil.
+	await start_partie(2, 1)
+	partie.brume.time_scale = 0.0
+	await _until(func(): return bots[0].etat == Joueur.Etat.SOL and bots[1].etat == Joueur.Etat.SOL, 60.0)
+	var br := partie.brume
+	br.next_center = Vector2(lzp.x, lzp.z)
+	br.next_radius = 40.0
+	var far := Vector2(lzp.x, lzp.z) + Vector2(70, 0)
+	var gas_bot := bots[0]
+	gas_bot.spawn_at(Vector3(far.x, ile.ground_at(far.x, far.y) + 0.2, far.y), 0.0)
+	gas_bot.sante.invulnerable = true
+	var t_gas := await _until(func(): return Vector2(gas_bot.global_position.x, gas_bot.global_position.z).distance_to(br.next_center) < br.next_radius * 0.9, 30.0)
+	if t_gas < 0.0:
+		_fail("Brume : le bot ne rejoint pas la zone sûre (%s, %.0f m)" % [(gas_bot.get_node("Bot") as Bot).state, Vector2(gas_bot.global_position.x, gas_bot.global_position.z).distance_to(br.next_center)])
+	out.append("zone sûre en %.1f s" % t_gas)
+	var prey := bots[1]
+	(prey.get_node("Bot") as Bot).set_physics_process(false)
+	prey.scripted = Intentions.new()
+	prey.spawn_at(lzp + Vector3(9, 0, -7), 0.0)
+	prey.sante.reset(0)
+	player.spawn_at(lzp + Vector3(9, 0, 5), 0.0)
+	player.ui_block = false
+	player.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
+	player.arsenal.cur = 0
+	player.arsenal.reserve["fusil"] = 240
+	var feed := []
+	partie.killed.connect(func(k, v, _c, by_p, _on_p): feed.append([k, v, by_p]))
+	await _wait(0.6)
+	player.scripted.fire_held = true
+	await _until(func():
+		player.look_at_point(prey.global_position + Vector3(0, 1.2, 0))
+		return prey.sante.dead, 4.0)
+	player.scripted.fire_held = false
+	if not prey.sante.dead or int(partie.stats.eliminations) != 1 or feed.is_empty() or not feed[0][2]:
+		_fail("élimination du joueur : %s, %d élim., fil %s" % [prey.sante.dead, int(partie.stats.get("eliminations", 0)), feed])
+	elif partie.respawn_open and float(partie.info[prey].respawn) <= 0.0:
+		_fail("bot éliminé : pas de réapparition prévue")
+	_end_partie()
+	await _wait(0.1)
+
+	# Partie accélérée à 24 : elle va jusqu'au bout (dernier debout), sans blocage.
+	var t0 := Time.get_ticks_msec()
+	await start_partie(23, 1)
+	partie.brume.time_scale = 12.0
+	player.sante.invulnerable = true
+	var kills := [0]
+	partie.killed.connect(func(k, _v, _c, _a, _b):
+		if k != "":
+			kills[0] += 1)
+	var looted := [0]
+	var t_end := await _until(func():
+		for bb in bots:
+			if Bot.weapon_score(bb.arsenal.current()) > 2.0:
+				looted[0] = maxi(looted[0], 1)
+		return not partie.running, 240.0)
+	player.sante.invulnerable = false
+	if t_end < 0.0 or kills[0] < 5:
+		_fail("partie à 24 : fin %s, %d éliminations, %d en jeu" % [t_end, kills[0], partie.remaining()])
+	out.append("partie à 24 : %.0f s de jeu, %d éliminations, %d ms de calcul" % [t_end, kills[0], Time.get_ticks_msec() - t0])
+	hud.close_panel()
+	show_lobby()
+	await _wait(0.1)
+	_set_mode("entrainement")
+	player.ui_block = false
+	player.scripted = Intentions.new()
+	return ", ".join(out)
+
+
+## --sim [--scale=N] : une partie complète de 23 bots (le joueur, invulnérable, ne joue pas) ;
+## affiche l'état des bots régulièrement et le temps de calcul. --sim --visee : précision des
+## bots selon la difficulté et la distance.
+func _sim() -> void:
+	if OS.get_cmdline_user_args().has("--visee"):
+		await _lab_aim()
+		get_tree().quit()
+		return
+	var scale := 8.0
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--scale="):
+			scale = float(a.substr(8))
+	await start_partie(23, 1)
+	partie.brume.time_scale = scale
+	player.scripted = Intentions.new()
+	player.sante.invulnerable = true
+	var t0 := Time.get_ticks_msec()
+	var feed := []
+	partie.killed.connect(func(k, v, c, _a, _b): feed.append("%s>%s(%s)" % [k, v, c]))
+	var sec := 0
+	while partie and partie.running and sec < 900:
+		await _wait(5.0)
+		sec += 5
+		var states := {}
+		var guns := {}
+		for b in bots:
+			var brain := b.get_node("Bot") as Bot
+			states[brain.state] = int(states.get(brain.state, 0)) + 1
+			var w := b.arsenal.current()
+			var id: String = w.get("id", "-")
+			guns[id] = int(guns.get(id, 0)) + 1
+		print("[sim] t=%d s phase %d · en jeu %d · %s · armes %s · %d ms réels · %s" % [sec, partie.brume.phase, partie.remaining(), states, guns, Time.get_ticks_msec() - t0, " ".join(feed)])
+		feed.clear()
+	print("[sim] fin : %s, %d ms" % [partie.stats if partie else {}, Time.get_ticks_msec() - t0])
+	get_tree().quit()
+
+
+## Précision d'un bot (Faucon) sur le joueur immobile, par difficulté et distance.
+func _lab_aim() -> void:
+	_set_mode("entrainement")
+	var lz: Dictionary = G.data.lieux.filter(func(l): return l.id == "lazaret")[0]
+	var lzp := Vector3(float(lz.x) + 9, float(lz.h) + 0.2, float(lz.z))
+	for lvl in 3:
+		for dist in [10.0, 25.0, 50.0]:
+			_spawn_bots(1, lvl, 5)
+			var b := bots[0]
+			b.arsenal.slots = [Armes.nouvelle("faucon", 1), {}]
+			b.arsenal.reserve["fusil"] = 240
+			player.scripted = Intentions.new()
+			player.spawn_at(lzp + Vector3(0, 0, -dist * 0.5), 0.0)
+			player.sante.reset(3)
+			player.sante.invulnerable = false
+			b.spawn_at(lzp + Vector3(0, 0, dist * 0.5), 0.0)
+			var hits := [0]
+			var c := func(_a, _z, _o, _b, _k):
+				hits[0] += 1
+				player.sante.hp = 100.0
+				player.sante.armor = 150.0
+			player.sante.damaged.connect(c)
+			await _wait(6.0)
+			player.sante.damaged.disconnect(c)
+			print("[aim] niveau %d, %d m : %d/%d (%.0f %%)" % [lvl, int(dist), hits[0], b.arsenal.shots_fired, 100.0 * hits[0] / maxf(1, b.arsenal.shots_fired)])
+			_clear_bots()
+			await _wait(0.1)
 
 
 # ------------------------------------------------------------------------------------------------
@@ -869,7 +1149,7 @@ func _tour() -> void:
 	await _shot(dir, "31_classes")
 	lobby._edit(0)
 	await _shot(dir, "31b_classe")
-	await start_partie()
+	await start_partie(0)
 	partie.brume.time_scale = 80.0
 	await _until(func(): return partie.brume.phase >= 3 and partie.brume.closing, 30.0)
 	partie.brume.time_scale = 0.0
@@ -906,4 +1186,54 @@ func _tour() -> void:
 	hud.mode = "partie"
 	hud.open_pause()
 	await _shot(dir, "24_pause")
+	hud.close_pause()
+	# Jalon 4 : les bots (silhouettes, armes en main) et un échange de tirs.
+	show_lobby()
+	_set_mode("entrainement")
+	player.scripted = Intentions.new()
+	var lzc: Dictionary = G.data.lieux.filter(func(l): return l.id == "lazaret")[0]
+	var base := Vector3(float(lzc.x), float(lzc.h), float(lzc.z))
+	player.spawn_at(base + Vector3(0, 0.1, 6), 0.0)
+	_spawn_bots(3, 1, 7)
+	var poses := [[Vector3(-2.2, 0, -2), "faucon", Joueur.Posture.DEBOUT], [Vector3(1.0, 0, -4), "vipere", Joueur.Posture.ACCROUPI],
+		[Vector3(3.6, 0, -1.5), "aiguille", Joueur.Posture.DEBOUT]]
+	for k in 3:
+		var bt := bots[k]
+		(bt.get_node("Bot") as Bot).set_physics_process(false)
+		bt.scripted = Intentions.new()
+		bt.spawn_at(base + poses[k][0] + Vector3(0, 0.1, 0), 0.0)
+		bt.arsenal.slots = [Armes.nouvelle(poses[k][1], 2), {}]
+		bt.arsenal.cur = 0
+		bt._set_posture(poses[k][2], true)
+		bt.look_at_point(player.global_position + Vector3(0, 1.5, 0) + Vector3(k - 1, 0, 0) * 3.0)
+	await _wait(0.2)
+	player.look_at_point(base + Vector3(0.8, 1.0, -2.5))
+	await _shot(dir, "38_bots")
+	# Duel : deux bots à 25 m, vus de côté.
+	for k in 3:
+		(bots[k].get_node("Bot") as Bot).set_physics_process(k < 2)
+	bots[2].spawn_at(base + Vector3(30, 0.1, 30), 0.0)
+	bots[0].spawn_at(base + Vector3(-12, 0.1, -6), -PI / 2)
+	bots[1].spawn_at(base + Vector3(12, 0.1, -6), PI / 2)
+	for k in 2:
+		bots[k].arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
+		bots[k].arsenal.reserve["fusil"] = 240
+	player.spawn_at(base + Vector3(0, 0.1, 10), 0.0)
+	player.look_at_point(base + Vector3(0, 1.2, -6))
+	await _wait(1.6)
+	await _shot(dir, "39_duel", 1)
+	_clear_bots()
+	# Partie à 16 : compteur, fil des éliminations, indicateur de dégâts.
+	await start_partie(15, 1)
+	player.scripted = Intentions.new()
+	await _wait(2.0)
+	partie.killed.emit("Goéland", "Mistral", "balle", false, false)
+	partie.killed.emit(player.nom, "Rascasse", "balle", true, false)
+	partie.killed.emit("Corsaire", "Cigale", "grenade", false, false)
+	partie.killed.emit("", "Galet", "brume", false, false)
+	partie.stats.eliminations = 1
+	hud._cross.add_damage(player.global_position + player.global_basis.x * -20.0)
+	await _shot(dir, "40_partie_bots", 2)
+	show_lobby()
+	player.scripted = null
 	get_tree().quit()

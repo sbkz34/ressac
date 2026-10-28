@@ -54,7 +54,7 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
 | **1** | **Mouvement** ✅ | Contrôleur du joueur : sprint, sprint tactique, glissade + **cancel slide**, saut de glissade, escalade de rebords, accroupi / couché, **parachute** (ouvrir, couper, rouvrir, ouverture auto) et saut d'avion, redéploiement depuis un point haut. Menu pause : taille de l'interface, marges, zone sûre, sensibilités. | Tests auto : glissade + annulation garde la vitesse et recharge le sprint tactique ; escalade d'un conteneur ; saut d'avion → atterrissage sur l'île. |
 | **2** | **Armes et combat** ✅ | 10 armes de Dernière Vague adaptées au PvP (dégâts par zone et selon la distance, raretés), santé + 3 plaques, régénération, visée et assistance, butin dans les bâtiments, coffres, champ de tir avec mannequins. | Tests auto : 9 balles de Faucon à 10 m, une balle d'Aiguille dans la tête à 70 m, plaques, ramassage, coffre. |
 | **3** | **Règles Résurgence** ✅ | La Brume en 6 phases, réapparition en parachute, sac de butin à la mort, argent, **stations d'achat**, **loadouts au lobby** (5 classes, 9 atouts) et largages de classe, grenade et fumigène, dégâts de chute, lobby et fin de partie. | Tests auto : partie complète accélérée (cercles emboîtés, largage offert, Brume, mort, réapparition, fin en phase 5, victoire). |
-| 4 | Bots | IA : choisir un lieu, piller, se déplacer avec la zone, combattre (portée, couverture), acheter en station. Niveaux de difficulté. | Partie de 24 combattants qui se termine sans blocage en test automatique. |
+| **4** | **Bots** ✅ | IA : choisir un lieu, piller, se déplacer avec la zone, combattre (portée, couverture), acheter en station. Niveaux de difficulté. Maillage de navigation de l'île, silhouettes, fil des éliminations, indicateur de dégâts, dernier debout et classement. | Partie de 24 combattants qui se termine sans blocage en test automatique. |
 | 5 | Mobile | Interface tactile complète, réglages, performances (objectif 60 i/s, < 300 appels de dessin), sons, menus, progression. | Partie fluide sur le Poco X8 Pro, manette GameSir et tactile. |
 | 6 | Multijoueur | Serveur autoritaire Godot sans écran hébergé sur ton serveur, lobby, synchronisation (prédiction côté client), bots pour compléter les parties. | Partie à plusieurs téléphones + bots. |
 
@@ -110,19 +110,41 @@ Valeurs dans `scripts/brume.gd`, `scripts/partie.gd`, `scripts/boutique.gd` et `
 - Dégâts de chute au-delà de 15 m/s à l'impact (≈ 6 m), 9 points par m/s en plus, à travers
   l'armure.
 
-## 8. Choix techniques
+## 8. Bots (jalon 4)
+
+Valeurs dans `scripts/bot.gd` (facile / normal / difficile).
+
+| | Facile | Normal | Difficile |
+|---|---|---|---|
+| Temps de réaction | 0,65 s | 0,4 s | 0,25 s |
+| Erreur de visée (écart type, ×3 au début de l'échange) | 1,6° | 1,0° | 0,6° |
+| Vue | 70 m | 100 m | 130 m |
+| Rotation maximale | 200 °/s | 280 °/s | 380 °/s |
+
+- Précision mesurée au Faucon sur une cible immobile (`--sim --visee`) : environ 40 % des balles
+  à 10–25 m en normal, jusqu'à 2 sur 3 de près en difficile.
+- Un bot est un `Joueur` avec `is_bot` : pas de caméra active ni de vue d'arme, une silhouette
+  partagée par posture (`bot_corps.gd`, deux appels de dessin par bot). Son cerveau (`Bot`) passe
+  avant la simulation à chaque pas et remplit ses `Intentions`.
+- Coût mesuré (sans écran) : ~0,04 ms par bot et par image pour le cerveau, ~0,07 ms pour sa
+  simulation ; 24 combattants tiennent largement dans le budget d'une image.
+- Navigation : maillage précalculé (cellules de 0,3 m, marches de 0,45 m, pente 46°), portes de
+  2 m et escaliers de 2 m de large pour qu'il passe partout.
+
+## 9. Choix techniques
 
 - **Godot 4.6**, rendu *Compatibility* (GL ES 3), Android arm64 — comme Dernière Vague.
 - **L'île vient de données** : `data/ile.json` décrit les masses de terre, collines, routes, lieux,
   bâtiments et stations d'achat. `tools/gen_island.py` en tire le relief, les sols, la végétation et
   la carte ; le jeu reconstruit les bâtiments à partir du même fichier. Modifier l'île = modifier
   le JSON puis relancer le script.
-- **Pas de navigation pré-calculée au jalon 0** : elle viendra avec les bots (navmesh par zones).
+- **Navigation précalculée** depuis le jalon 4 : un seul maillage pour toute l'île
+  (`assets/map/navigation.res`, ~9 000 polygones, calculé en 1 s par `--bake-nav`).
 - **Multijoueur** : API réseau haut niveau de Godot (ENet), serveur autoritaire. Depuis le jalon 1,
   la simulation du joueur (`joueur.gd`) lit une structure `Intentions` (`intentions.gd`) : manette,
   clavier, tactile, bots de test et, plus tard, joueurs distants passent par le même chemin.
 
-## 9. Questions ouvertes
+## 10. Questions ouvertes
 
 - Taille des équipes au lancement : solo seulement, ou duo/trio avec des bots coéquipiers ?
 - Nombre de combattants par partie (24 ? 32 ?) — à confirmer avec les performances.

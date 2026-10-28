@@ -1,6 +1,6 @@
 class_name Lobby
 extends CanvasLayer
-## Le lobby : jouer une partie de Résurgence (solo, les bots arrivent au jalon 4), s'entraîner au
+## Le lobby : jouer une partie de Résurgence contre des bots (nombre et difficulté), s'entraîner au
 ## champ de tir, préparer ses 5 classes (armes, atouts), régler l'affichage. Se joue à la
 ## manette (croix + A / B), au tactile et à la souris.
 
@@ -33,18 +33,34 @@ func _ready() -> void:
 	var sub := _label(_root, "Île du Lazaret · Résurgence", 26, Color(1, 1, 1, 0.85))
 	sub.position = Vector2(76, 138)
 	_menu = _column(Vector2(70, 210))
-	_first = _button(_menu, "Jouer — Résurgence (solo)", func(): play.emit())
+	_first = _button(_menu, "Jouer — Résurgence", func(): play.emit())
+	var bots_btn: Button
+	bots_btn = _button(_menu, _bots_text(), func():
+		var opts := [0, 7, 15, 23]
+		var k := opts.find(int(G.settings.bots))
+		G.set_setting("bots", opts[(k + 1) % opts.size()])
+		bots_btn.text = _bots_text())
+	var lvl_btn: Button
+	lvl_btn = _button(_menu, _level_text(), func():
+		G.set_setting("difficulte", (int(G.settings.difficulte) + 1) % 3)
+		lvl_btn.text = _level_text())
 	_button(_menu, "Entraînement (champ de tir)", func(): training.emit())
 	_button(_menu, "Classes", _show_classes)
 	_button(_menu, "Réglages", func(): settings.emit())
 	_button(_menu, "Quitter", func(): get_tree().quit())
-	var hint := _label(_menu, "Les adversaires (bots) arrivent au jalon 4 : pour l'instant, on affronte la Brume.", 17, Color(1, 1, 1, 0.65))
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size = Vector2(460, 0)
 	_classes = _column(Vector2(70, 210))
 	_editor = _column(Vector2(70, 190))
 	_classes.visible = false
 	_editor.visible = false
+
+
+func _bots_text() -> String:
+	var n := int(G.settings.bots)
+	return "Adversaires : %s" % ("aucun (seul contre la Brume)" if n == 0 else "%d bots" % n)
+
+
+func _level_text() -> String:
+	return "Difficulté des bots : %s" % ["facile", "normale", "difficile"][clampi(int(G.settings.difficulte), 0, 2)]
 
 
 func show_menu() -> void:

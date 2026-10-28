@@ -1,7 +1,7 @@
 class_name Lancer
 extends Node3D
 ## Équipement lancé : grenade (explose au bout de 2,5 s, dégâts selon la distance, à travers
-## l'armure comme une balle) ou fumigène (nuage opaque pendant 14 s, que les bots du jalon 4
+## l'armure comme une balle) ou fumigène (nuage opaque pendant 14 s, que les bots
 ## ne verront pas à travers). Trajectoire calculée à la main : rebonds sur le décor, freinage.
 
 const GRAVITY := 18.0
@@ -78,7 +78,7 @@ func _physics_process(delta: float) -> void:
 
 func _explode() -> void:
 	var at := global_position + Vector3(0, 0.2, 0)
-	G.play("grenade_explode", -2.0)
+	G.play_at("grenade_explode", global_position, 4.0)
 	var space := get_world_3d().direct_space_state
 	for c in get_tree().get_nodes_in_group("combattant"):
 		var s: Sante = c.sante
@@ -92,7 +92,7 @@ func _explode() -> void:
 		if not space.intersect_ray(q).is_empty():
 			continue   # à l'abri derrière un mur
 		var k := 1.0 - clampf((d - 1.5) / (BLAST_RADIUS - 1.5), 0.0, 1.0)
-		s.take(BLAST_DAMAGE * k, "torse", "grenade")
+		s.take(BLAST_DAMAGE * k, "torse", "grenade", false, thrower)
 	# Boule de feu et poussière.
 	var fire := MeshInstance3D.new()
 	var sm := SphereMesh.new()
@@ -114,7 +114,7 @@ func _explode() -> void:
 
 
 func _smoke() -> void:
-	G.play("decoy", -6.0, 0.6)
+	G.play_at("decoy", global_position, -2.0, 0.6)
 	var cloud := Node3D.new()
 	cloud.add_to_group("fumee")
 	cloud.set_meta("rayon", SMOKE_RADIUS)

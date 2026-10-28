@@ -2,7 +2,7 @@ class_name Cible
 extends Node3D
 ## Mannequin d'entraînement : mêmes zones de touche, même santé et même armure (3 plaques)
 ## qu'un adversaire. Il peut faire des allers-retours, tombe quand il est éliminé et se relève
-## au bout de quelques secondes avec une armure neuve. Les bots du jalon 4 reprendront ses zones.
+## au bout de quelques secondes avec une armure neuve. Les bots ont les mêmes zones (Sante.make_hitboxes).
 
 const RESPAWN := 3.0
 

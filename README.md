@@ -12,18 +12,50 @@ GPU Mali), avec les graphismes et les sons de [Dernière Vague](https://github.c
 
 ![L'Île du Lazaret](docs/carte.png)
 
-## État actuel : jalon 3, les règles de Résurgence
+## État actuel : jalon 4, les bots
 
-On arrive au **lobby** : jouer une partie de Résurgence (en solo pour l'instant, les bots
-arrivent au jalon 4), s'entraîner au champ de tir, préparer ses **5 classes** (arme principale,
-arme secondaire, un atout par colonne), régler l'affichage.
+On joue maintenant **contre des bots** : jusqu'à 23 adversaires (24 combattants), réglables au
+lobby (aucun, 7, 15 ou 23) avec trois niveaux de difficulté. Les bots sont des combattants comme
+vous — mêmes règles de mouvement, d'armes, d'armure, de butin et de réapparition — pilotés par
+une petite IA (`scripts/bot.gd`) qui remplit les mêmes commandes qu'une manette :
+
+- **Saut** : chacun choisit un lieu (les plus riches attirent, mais ils se répartissent), saute
+  de l'avion au plus près, ouvre tôt s'il est loin et se dirige sous la voile.
+- **Pillage** : armes meilleures que les siennes, munitions qui lui servent, plaques, argent,
+  coffres ; déplacements par un **maillage de navigation** de toute l'île (escaliers, étages,
+  quais), glissades et cancel slides en courant, escalade quand ça coince.
+- **Achats** : avec 4 500 €, il va à la station la plus proche, achète un largage, l'ouvre et
+  prend une classe (et un gilet ou une grenade s'il reste de l'argent). Il récupère aussi le
+  largage offert en phase 2.
+- **Brume** : il rejoint le prochain cercle avant qu'il se referme.
+- **Combat** : il voit dans un champ de 115° jusqu'à 70 / 100 / 130 m selon la difficulté, pas à
+  travers les murs ni les fumigènes. Temps de réaction (0,65 / 0,4 / 0,25 s), visée imprécise
+  qui s'affine pendant l'échange, rafales, visée épaulée au-delà de 12 m, pas de côté, il se
+  rapproche ou recule selon la portée de son arme, poursuit, lance des grenades et se replie
+  derrière un fumigène pour remettre des plaques. Avec le seul pistolet de départ, il pille
+  plutôt que d'aller chercher la bagarre de loin.
+
+Une partie se gagne en étant **le dernier debout** une fois la réapparition fermée (phase 5). En
+jeu : le nombre de combattants encore en lice, vos éliminations, le **fil des éliminations** et
+un **arc rouge** qui indique d'où viennent les tirs reçus. En fin de partie : votre classement.
+Les sons des autres (tirs, pas, réceptions) sont placés dans l'espace.
+
+| | |
+|---|---|
+| ![Bots](docs/captures/38_bots.jpg) | ![Partie à 16](docs/captures/40_partie_bots.jpg) |
+| ![Lobby](docs/captures/30_lobby.jpg) | ![Fin de partie](docs/captures/37_fin.jpg) |
+
+### Jalon 3 : les règles de Résurgence
+
+On arrive au **lobby** : jouer une partie, s'entraîner au champ de tir, préparer ses **5 classes**
+(arme principale, arme secondaire, un atout par colonne), régler l'affichage.
 
 Une partie : saut d'avion au-dessus de l'île, pillage, puis **la Brume** referme l'aire de jeu en
 6 phases (environ 10 minutes) jusqu'à l'un des lieux de fin (Lazaret, Cimetière, Citerne,
 Cabanons, Salins). Hors du cercle, on perd de la vie à travers l'armure, de plus en plus vite.
 Mort avant la phase 5 : on laisse un sac avec tout son butin et on **revient en chute libre**
 dans la zone après 10 à 30 s, avec le pistolet de départ. À partir de la phase 5, chaque vie
-compte. Rester debout jusqu'à la fermeture complète donne la victoire.
+compte. Sans adversaires, rester debout jusqu'à la fermeture complète donne la victoire.
 
 L'argent ramassé s'utilise aux **5 stations d'achat** :
 
@@ -42,10 +74,9 @@ Les chutes de plus de 6 m font des dégâts (sauf avec Amorti).
 
 | | |
 |---|---|
-| ![Lobby](docs/captures/30_lobby.jpg) | ![Classe](docs/captures/31b_classe.jpg) |
+| ![Classe](docs/captures/31b_classe.jpg) | ![Largage de classe](docs/captures/36_largage.jpg) |
 | ![La Brume](docs/captures/32_brume.jpg) | ![Dans la Brume](docs/captures/33_dans_la_brume.jpg) |
 | ![Carte et cercles](docs/captures/34_carte_brume.jpg) | ![Station d'achat](docs/captures/35_boutique.jpg) |
-| ![Largage de classe](docs/captures/36_largage.jpg) | ![Fin de partie](docs/captures/37_fin.jpg) |
 
 ### Jalons précédents
 
@@ -106,7 +137,13 @@ dispersion, visée plus rapide.
   cancel slide, sprint tactique, escalade, parachute, redéploiement, avion, nage, drone, interface,
   butin, ramassage, rechargement, balles pour éliminer au champ de tir, tête au fusil de précision,
   plaques, régénération, coffres, chutes, grenade, achats, largage et choix de classe, Brume,
-  mort et réapparition, fin de partie et victoire en accéléré).
+  mort et réapparition, fin de partie et victoire en accéléré, chemins des bots vers chaque lieu et
+  les étages, bot qui pille, abat un mannequin, gagne un duel, rejoint la zone sûre, élimination
+  créditée au joueur, partie complète à 24 en accéléré).
+- Maillage de navigation des bots : `godot --headless --path . -- --bake-nav` (à relancer après
+  une modification de l'île) ; il est enregistré dans `assets/map/navigation.res`.
+- Réglage des bots : `godot --headless --fixed-fps 60 --path . -- --sim --scale=2` joue une partie
+  de 23 bots et affiche ce qu'ils font ; `-- --sim --visee` mesure leur précision.
 - Captures de chaque lieu : `godot --path . -- --tour --shots=/tmp/captures`.
 - Chaque push sur `main` vérifie l'île, compile l'APK (GitHub Actions) et publie une release.
 

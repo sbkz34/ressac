@@ -106,6 +106,34 @@ road_d = distance_transform_edt(np.array(road_mask) < 128) * CELL
 road_w = smoothstep(9.0, 2.0, road_d) * on_land
 h = h * (1 - 0.6 * road_w) + gaussian_filter(h, 2.0) * 0.6 * road_w
 
+# Les chemins sont praticables à pied : pente limitée (~14°). On calcule leur profil (déblai
+# dans les buttes, remblai en digue au-dessus des creux) puis on y raccorde le terrain.
+from scipy.spatial import cKDTree
+GRADE = 0.25
+prof_pts, prof_h = [], []
+for r in DATA["routes"]:
+    dense = []
+    for a, b in zip(r, r[1:]):
+        n = max(2, int(math.hypot(b[0] - a[0], b[1] - a[1])))
+        for t in np.linspace(0.0, 1.0, n, endpoint=False):
+            dense.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+    dense.append(tuple(r[-1]))
+    ys = np.array([map_coordinates(h, [[(z + HALF) / CELL], [(x + HALF) / CELL]], order=1)[0] for x, z in dense])
+    steps = np.array([0.0] + [math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]) for i in range(1, len(dense))])
+    for _ in range(6):
+        for i in range(1, len(ys)):
+            ys[i] = np.clip(ys[i], ys[i - 1] - GRADE * steps[i], ys[i - 1] + GRADE * steps[i])
+        for i in range(len(ys) - 2, -1, -1):
+            ys[i] = np.clip(ys[i], ys[i + 1] - GRADE * steps[i + 1], ys[i + 1] + GRADE * steps[i + 1])
+    prof_pts += dense
+    prof_h += list(ys)
+tree = cKDTree(np.array(prof_pts))
+near = road_d < 14.0
+dist, idx = tree.query(np.stack([X[near], Z[near]], axis=1))
+target = np.array(prof_h)[idx]
+w = smoothstep(14.0, 4.0, dist)   # aussi au-dessus des criques : le chemin y passe en digue
+h[near] = h[near] * (1 - w) + target * w
+
 h = np.clip(h, H_MIN, H_MIN + H_RANGE - 0.01)
 
 # Contrôles : chaque lieu est sur la terre ferme, à la bonne hauteur.

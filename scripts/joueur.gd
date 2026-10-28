@@ -85,6 +85,9 @@ var sante: Sante
 var arsenal: Arsenal
 var hitboxes: Array[Area3D] = []
 var in_gas := false           # dans la Brume (réglé par la partie)
+var is_bot := false           # combattant piloté par un Bot (pas de caméra ni de vue d'arme)
+var nom := "Vous"
+var corps: BotCorps           # silhouette visible des autres (bots)
 var ui_block := false         # un menu (achat, classe) est ouvert : les commandes locales sont coupées
 
 var _local := Intentions.new()
@@ -105,6 +108,7 @@ var _mantle_sprint := false
 var _step := 0.0
 var _fall_peak := 0.0
 var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
+var _hb_on := true
 
 
 func _ready() -> void:
@@ -129,7 +133,7 @@ func _ready() -> void:
 	cam.near = 0.08
 	cam.far = 2200.0
 	head.add_child(cam)
-	cam.current = true
+	cam.current = not is_bot
 	_make_canopy()
 	sante = Sante.new()
 	sante.name = "Sante"
@@ -138,7 +142,10 @@ func _ready() -> void:
 	arsenal = Arsenal.new()
 	arsenal.name = "Arsenal"
 	add_child(arsenal)
-	arsenal.setup(self, hitboxes)
+	arsenal.setup(self, hitboxes, is_bot)
+	if is_bot:
+		corps = BotCorps.new()
+		add_child(corps)
 
 
 func _apply_shape(p: int) -> void:
@@ -268,8 +275,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		set_drone(etat != Etat.DRONE)
 
 
+## Sons du mouvement : au joueur directement ; ceux d'un bot s'entendent de près (pas, réceptions).
+func _snd(name: String, vol := 0.0, pitch := 1.0) -> void:
+	if not is_bot:
+		G.play(name, vol, pitch)
+		return
+	var cam3 := get_viewport().get_camera_3d()
+	if cam3 and cam3.global_position.distance_squared_to(global_position) < 28.0 * 28.0:
+		G.play_at(name, global_position + Vector3(0, 0.3, 0), vol + 6.0, pitch)
+
+
 func _process(delta: float) -> void:
-	if get_tree().paused:
+	if is_bot or get_tree().paused:
 		return
 	var i := _local
 	if ui_block:
@@ -356,6 +373,14 @@ func _physics_process(delta: float) -> void:
 	i.consume()
 	hspeed = Vector2(velocity.x, velocity.z).length()
 	_update_camera(delta)
+	if corps:
+		corps.follow(self)
+	# Mort, dans l'avion ou en spectateur : on ne peut pas être touché (ni arrêter les balles).
+	var hb := not sante.dead and etat != Etat.AVION and etat != Etat.DRONE
+	if hb != _hb_on:
+		_hb_on = hb
+		for a in hitboxes:
+			a.collision_layer = G.L_HITBOX if hb else 0
 
 
 func _wish_dir(i: Intentions) -> Vector2:
@@ -474,16 +499,30 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 		velocity.y -= GRAVITY * delta
 		_fall_peak = maxf(_fall_peak, -velocity.y)
 	move_and_slide()
+	if on_floor and is_on_wall() and hv.length() > 0.5 and not swimming:
+		_step_up(Vector3(hv.x, 0, hv.y))
 	if is_on_floor() and not on_floor:
 		if _fall_peak > 9.0:
-			G.play("jump_land", -6.0)
+			_snd("jump_land", -6.0)
 			landed.emit()
 		# Dégâts de chute (à travers l'armure) au-delà de ~6 m.
 		if _fall_peak > FALL_SAFE and not arsenal.has_perk("amorti"):
 			sante.take((_fall_peak - FALL_SAFE) * FALL_DAMAGE, "jambes", "chute", true)
-			G.play("hurt", -2.0)
+			_snd("hurt", -2.0)
 		_fall_peak = 0.0
 	_footsteps(delta)
+
+
+## Monte les petites marches (bord de quai, muret bas, seuil) sans avoir à sauter, comme le
+## maillage de navigation des bots le suppose (0,45 m au plus).
+func _step_up(dir: Vector3) -> void:
+	var step := dir.normalized() * 0.25
+	for h in [0.25, 0.45]:
+		var t := global_transform
+		if not test_move(t, Vector3(0, h, 0)) and not test_move(t.translated(Vector3(0, h, 0)), step):
+			global_position += Vector3(0, h, 0) + step
+			velocity.y = 0.0
+			return
 
 
 func _footsteps(delta: float) -> void:
@@ -492,7 +531,7 @@ func _footsteps(delta: float) -> void:
 		_step += hs * delta
 		if _step > (2.4 if sprinting else 1.9):
 			_step = 0.0
-			G.play("step", -14.0 if posture == Posture.DEBOUT else -20.0, randf_range(0.85, 1.15))
+			_snd("step", -14.0 if posture == Posture.DEBOUT else -20.0, randf_range(0.85, 1.15))
 
 
 func _end_tac() -> void:
@@ -515,7 +554,7 @@ func _start_slide(hv: Vector2) -> void:
 		tac_cooldown = TAC_COOLDOWN
 	_set_posture(Posture.ACCROUPI, true)
 	_set_etat(Etat.GLISSADE)
-	G.play("jump_land", -10.0, 0.6)
+	_snd("jump_land", -10.0, 0.6)
 
 
 func _sim_glissade(i: Intentions, delta: float) -> void:
@@ -609,7 +648,7 @@ func _try_mantle() -> bool:
 	_mantle_dur = 0.22 + 0.12 * (_mantle_to.y - _mantle_from.y)
 	velocity = Vector3.ZERO
 	_set_etat(Etat.ESCALADE)
-	G.play("step", -8.0, 0.7)
+	_snd("step", -8.0, 0.7)
 	return true
 
 
@@ -673,7 +712,7 @@ func _sim_avion(i: Intentions) -> void:
 	if i.jump or avion.must_jump():
 		var v := avion.velocity_vector() * 0.3
 		start_freefall(avion.global_position + avion.global_basis * Vector3(0, -3.0, 14.0), v)
-		G.play("jump_land", -8.0, 0.5)
+		_snd("jump_land", -8.0, 0.5)
 
 
 func _sim_chute_libre(i: Intentions, delta: float) -> void:
@@ -700,7 +739,7 @@ func _open_chute() -> void:
 	_end_tac()
 	_set_posture(Posture.DEBOUT, true)
 	_set_etat(Etat.PARACHUTE)
-	G.play("plank_place", -6.0, 0.6)
+	_snd("plank_place", -6.0, 0.6)
 
 
 func _sim_parachute(i: Intentions, delta: float) -> void:
@@ -725,7 +764,7 @@ func _land() -> void:
 	_set_etat(Etat.SOL)
 	_fall_peak = 0.0
 	velocity.y = 0.0
-	G.play("jump_land", -4.0)
+	_snd("jump_land", -4.0)
 	landed.emit()
 
 

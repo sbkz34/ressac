@@ -6,7 +6,7 @@ extends Node3D
 
 const T := 0.3          # épaisseur des murs
 const FH := 3.2         # hauteur d'étage par défaut
-const DOOR_W := 1.6
+const DOOR_W := 2.0
 const DOOR_H := 2.4
 
 var data: Dictionary
@@ -336,9 +336,9 @@ func _batiment(node: Node3D, b: Dictionary) -> void:
 	var z0 := -d / 2
 	var z1 := d / 2
 	# Escalier : le long du mur est, sauf si seule une porte y est et pas à l'ouest.
-	var stair_x := x1 - T / 2 - 0.8
+	var stair_x := x1 - T / 2 - 1.0
 	if portes.has("e") and not portes.has("w"):
-		stair_x = x0 + T / 2 + 0.8
+		stair_x = x0 + T / 2 + 1.0
 	var stair_side := "e" if stair_x > 0 else "w"
 	var run := clampf(fh * 1.55, 3.0, d - T - 1.2)
 	var sz0 := z0 + T / 2 + 0.5
@@ -351,10 +351,10 @@ func _batiment(node: Node3D, b: Dictionary) -> void:
 		# Plancher de l'étage (au-dessus du rez-de-chaussée), troué au-dessus de la rampe.
 		if k > 0:
 			slab(node, x0, z0, x1, z1, y0, 0.25, mats.dalle,
-				Rect2(stair_x - 0.8, sz0 + run * 0.3, 1.6, run * 0.7 + 0.3))
+				Rect2(stair_x - 1.0, sz0 - 0.4, 2.0, run + 0.4))
 			box(node, Vector3(0, y0 + 0.01, 0), Vector3(w - T, 0.02, d - T), mats.plancher, false)
 		if has_stairs and (k < floors - 1 or roof_access):
-			ramp(node, stair_x, sz0, y0, run, fh, 1.4, mats.dalle)
+			ramp(node, stair_x, sz0, y0, run, fh, 2.0, mats.dalle)
 		var ground := k == 0
 		for side in ["n", "s", "e", "w"]:
 			var a: Vector3
@@ -392,7 +392,7 @@ func _batiment(node: Node3D, b: Dictionary) -> void:
 	# Toit-terrasse.
 	var top := floors * fh
 	if roof_access:
-		slab(node, x0, z0, x1, z1, top, 0.25, mats.dalle, Rect2(stair_x - 0.8, sz0 + run * 0.3, 1.6, run * 0.7 + 0.3))
+		slab(node, x0, z0, x1, z1, top, 0.25, mats.dalle, Rect2(stair_x - 1.0, sz0 - 0.4, 2.0, run + 0.4))
 		for side in [[Vector3(x0, 0, z0), Vector3(x1, 0, z0)], [Vector3(x0, 0, z1), Vector3(x1, 0, z1)],
 				[Vector3(x0, 0, z0), Vector3(x0, 0, z1)], [Vector3(x1, 0, z0), Vector3(x1, 0, z1)]]:
 			wall(node, side[0], side[1], [], m, top, 1.0)
@@ -506,7 +506,7 @@ func _bunker(node: Node3D, b: Dictionary) -> void:
 		var length := a.distance_to(e)
 		var openings := []
 		if portes.has(side):
-			openings.append([length / 2 - 0.8, length / 2 + 0.8, 0.0, 2.2])
+			openings.append([length / 2 - 1.0, length / 2 + 1.0, 0.0, 2.2])
 		if side == "n":
 			# Meurtrières face à la mer.
 			for c in [length * 0.25, length * 0.75]:
@@ -680,10 +680,10 @@ func _bassins(node: Node3D, b: Dictionary) -> void:
 	var nz := int(b.nz)
 	for i in nx + 1:
 		var x := -w / 2 + i * w / nx
-		box(node, Vector3(x, 0.15, 0), Vector3(0.5, 0.7, d), mats.dalle)
+		box(node, Vector3(x, -0.05, 0), Vector3(0.5, 0.6, d), mats.dalle)
 	for j in nz + 1:
 		var z := -d / 2 + j * d / nz
-		box(node, Vector3(0, 0.15, z), Vector3(w, 0.7, 0.5), mats.dalle)
+		box(node, Vector3(0, -0.05, z), Vector3(w, 0.6, 0.5), mats.dalle)
 	for i in nx:
 		for j in nz:
 			var cx := -w / 2 + (i + 0.5) * w / nx

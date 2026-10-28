@@ -149,7 +149,7 @@ func can_open() -> bool:
 func open_chest() -> void:
 	if not can_open():
 		return
-	G.play("box", -6.0)
+	G.play_at("box", global_position, 0.0)
 	if not ravitaillement:
 		is_open = true
 		_glow.visible = false
@@ -162,7 +162,7 @@ func _process(delta: float) -> void:
 		if global_position.y <= _fall_to + 0.001:
 			_falling = false
 			_chute.visible = false
-			G.play("jump_land", -4.0, 0.6)
+			G.play_at("jump_land", global_position, 2.0, 0.6)
 	if is_open and _lid_t < 1.0:
 		_lid_t = minf(1.0, _lid_t + delta * 3.0)
 		_lid.rotation.x = 1.9 * ease(_lid_t, 0.5)

@@ -19,10 +19,14 @@ var dead := false
 var invulnerable := false
 var regen_delay := REGEN_DELAY
 var last_cause := ""          # "balle", "grenade", "brume", "chute"
+var last_attacker: Node = null   # qui a touché en dernier (crédit de l'élimination)
+var attacker_age := 99.0         # secondes depuis ce dernier coup
 var _since_hit := 99.0
 
 
 func reset(plates := 0) -> void:
+	last_attacker = null
+	attacker_age = 99.0
 	hp = HP_MAX
 	armor = minf(armor_max, Armes.PLAQUE * plates)
 	dead = false
@@ -45,11 +49,14 @@ func insert_plate() -> bool:
 
 ## Applique des dégâts ; l'armure encaisse d'abord (sauf la Brume et les chutes, qui passent
 ## à travers). Renvoie les dégâts réellement infligés.
-func take(amount: float, zone := "torse", cause := "balle", through_armor := false) -> float:
+func take(amount: float, zone := "torse", cause := "balle", through_armor := false, attacker: Node = null) -> float:
 	if dead or invulnerable or amount <= 0.0:
 		return 0.0
 	_since_hit = 0.0
 	last_cause = cause
+	if attacker:
+		last_attacker = attacker
+		attacker_age = 0.0
 	var on_armor := armor > 0.0 and not through_armor
 	var absorbed := 0.0 if through_armor else minf(armor, amount)
 	armor -= absorbed
@@ -69,6 +76,7 @@ func take(amount: float, zone := "torse", cause := "balle", through_armor := fal
 
 
 func _physics_process(delta: float) -> void:
+	attacker_age += delta
 	if dead:
 		return
 	_since_hit += delta

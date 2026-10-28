@@ -75,7 +75,7 @@ jobs:
           tag="build-${{ github.run_number }}"
           gh release create "$tag" build/ressac.apk --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "Ressac — build ${{ github.run_number }}" --latest \
-            --notes "APK Android (arm64). Jalon 3 : règles de Résurgence (lobby, classes, Brume, réapparition, stations d'achat, largages, grenades), avec le combat du jalon 2 et le mouvement du jalon 1. Téléchargez ressac.apk et installez-le ; les builds suivants s'installent par-dessus (même signature)."
+            --notes "APK Android (arm64). Jalon 4 : jusqu'à 23 bots (3 niveaux) qui sautent, pillent, achètent, fuient la Brume et se battent ; dernier debout, fil des éliminations, indicateur de dégâts. Avec les règles de Résurgence du jalon 3, le combat du jalon 2 et le mouvement du jalon 1. Téléchargez ressac.apk et installez-le ; les builds suivants s'installent par-dessus (même signature)."
 
       - uses: actions/upload-artifact@v4
         if: always()

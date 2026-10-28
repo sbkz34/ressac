@@ -48,6 +48,9 @@ var _panel_box: VBoxContainer
 var _panel_kind := ""
 var _station: Node3D
 var _crate: Coffre
+var _alive_lbl: Label
+var _feed: Label
+var _feed_lines: Array = []       # [texte, temps restant]
 
 
 func _ready() -> void:
@@ -96,6 +99,14 @@ func _ready() -> void:
 	_money.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_money.offset_left = 4
 	_money.offset_top = 26
+	_alive_lbl = _label(_frame, 20, Color(1, 1, 1))
+	_alive_lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_alive_lbl.offset_left = 4
+	_alive_lbl.offset_top = 50
+	_feed = _label(_frame, 16, Color(1, 1, 1, 0.92))
+	_feed.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_feed.offset_left = 4
+	_feed.offset_top = 78
 	_vitals = Vitals.new()
 	_vitals.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_vitals.offset_left = -300
@@ -186,6 +197,10 @@ func attach(p: Joueur) -> void:
 	p.arsenal.notice.connect(notify)
 	p.arsenal.shop_requested.connect(open_shop)
 	p.arsenal.loadout_requested.connect(open_loadout_choice)
+	p.sante.damaged.connect(func(_a, _z, _o, _b, _k):
+		var by := p.sante.last_attacker as Node3D
+		if by and is_instance_valid(by) and by != p and p.sante.last_cause in ["balle", "grenade"]:
+			_cross.add_damage(by.global_position))
 
 
 func notify(t: String) -> void:
@@ -196,8 +211,41 @@ func notify(t: String) -> void:
 func set_partie(p: Partie) -> void:
 	partie = p
 	_map.partie = p
+	_feed_lines.clear()
+	_feed.text = ""
 	if p:
 		p.message.connect(notify)
+		p.killed.connect(_on_killed)
+
+
+## Fil des éliminations, en haut à gauche (les plus récentes en bas).
+func _on_killed(killer: String, victim: String, cause: String, by_player: bool, on_player: bool) -> void:
+	var t := ""
+	var gren := " (grenade)" if cause == "grenade" else ""
+	if by_player:
+		t = "Vous avez éliminé %s%s" % [victim, gren]
+	elif on_player and killer != "":
+		t = "%s vous a éliminé%s" % [killer, gren]
+	elif killer != "":
+		t = "%s a éliminé %s%s" % [killer, victim, gren]
+	else:
+		if on_player:
+			t = {"brume": "Vous succombez à la Brume", "chute": "Vous vous écrasez"}.get(cause, "Vous êtes éliminé")
+		else:
+			t = "%s %s" % [victim, {"brume": "succombe à la Brume", "chute": "s'écrase"}.get(cause, "est éliminé")]
+	if by_player:
+		notify("Élimination : %s" % victim)
+	_feed_lines.append([t, 7.0])
+	while _feed_lines.size() > 5:
+		_feed_lines.pop_front()
+	_refresh_feed()
+
+
+func _refresh_feed() -> void:
+	var lines := []
+	for l in _feed_lines:
+		lines.append(l[0])
+	_feed.text = "\n".join(lines)
 
 
 func set_avion(a: Avion) -> void:
@@ -446,14 +494,23 @@ func open_loadout_choice(crate: Coffre) -> void:
 
 
 func show_end(victory: bool, stats: Dictionary) -> void:
-	_panel_begin("fin", "VICTOIRE — DERNIER DEBOUT" if victory else "ÉLIMINÉ")
+	var place := int(stats.get("place", 0))
+	var total := int(stats.get("total", 1))
+	var title := "VICTOIRE — DERNIER DEBOUT" if victory else "ÉLIMINÉ"
+	if not victory and place > 0 and total > 1:
+		title = "ÉLIMINÉ — %de SUR %d" % [place, total]
+	_panel_begin("fin", title)
 	var t := int(stats.get("temps", 0.0))
-	var lines := [
+	var lines := []
+	if total > 1:
+		lines.append("Classement : %s / %d" % ["1er" if place == 1 else "%de" % place, total])
+		lines.append("Éliminations : %d" % int(stats.get("eliminations", 0)))
+	lines.append_array([
 		"Temps de survie : %d min %02d s" % [t / 60, t % 60],
 		"Phase atteinte : %d / %d" % [int(stats.get("phase", 1)), Brume.PHASES.size()],
 		"Réapparitions : %d" % int(stats.get("morts", 0)),
 		"Argent en poche : %d €" % int(stats.get("argent", 0)),
-	]
+	])
 	for l in lines:
 		var lbl := _label(_panel_box, 22, Color(1, 1, 1))
 		lbl.text = l
@@ -600,6 +657,19 @@ func _process(delta: float) -> void:
 			tl[k] = ""
 	touch.labels = tl
 	_money.text = "%d €" % a.argent
+	if in_match and partie.combatants.size() > 1:
+		_alive_lbl.text = "%d EN JEU  ·  %d ÉLIM." % [partie.remaining(), int(partie.stats.get("eliminations", 0))]
+	else:
+		_alive_lbl.text = ""
+	if not _feed_lines.is_empty():
+		var changed := false
+		for l in _feed_lines:
+			l[1] = float(l[1]) - delta
+		while not _feed_lines.is_empty() and float(_feed_lines[0][1]) <= 0.0:
+			_feed_lines.pop_front()
+			changed = true
+		if changed:
+			_refresh_feed()
 	_notice_t -= delta
 	_notice.modulate.a = clampf(_notice_t, 0.0, 1.0)
 	# Jauge : se vide pendant le sprint tactique, se remplit pendant la recharge.
@@ -700,6 +770,16 @@ class Crosshair:
 	var arsenal: Arsenal
 	var _hit_t := 0.0
 	var _hit_kind := ""
+	var _dmg: Array = []          # [position de l'attaquant, temps restant]
+
+	## Touché : un arc rouge autour du centre indique d'où vient le tir.
+	func add_damage(from: Vector3) -> void:
+		for d in _dmg:
+			if (d[0] as Vector3).distance_to(from) < 3.0:
+				d[0] = from
+				d[1] = 1.6
+				return
+		_dmg.append([from, 1.6])
 	const COLORS := {"corps": Color(1, 1, 1), "tete": Color(1, 0.85, 0.2), "armure": Color(0.45, 0.7, 1.0),
 		"brise": Color(0.3, 0.6, 1.0), "elimination": Color(1, 0.25, 0.2)}
 
@@ -709,12 +789,24 @@ class Crosshair:
 
 	func _process(delta: float) -> void:
 		_hit_t = maxf(0.0, _hit_t - delta)
+		for d in _dmg:
+			d[1] = float(d[1]) - delta
+		_dmg = _dmg.filter(func(d): return float(d[1]) > 0.0)
 		queue_redraw()
 
 	func _draw() -> void:
-		if arsenal == null or not arsenal.can_use_weapon():
+		if arsenal == null:
 			return
 		var c := size / 2
+		var j := arsenal.joueur
+		for d in _dmg:
+			var local := j.global_basis.inverse() * ((d[0] as Vector3) - j.global_position)
+			var ang := atan2(local.x, -local.z) - PI / 2.0
+			var r := minf(size.x, size.y) * 0.2
+			var col := Color(1, 0.15, 0.1, clampf(float(d[1]), 0.0, 1.0) * 0.85)
+			draw_arc(c, r, ang - 0.32, ang + 0.32, 16, col, 9.0)
+		if not arsenal.can_use_weapon():
+			return
 		if arsenal.view.hidden_by_scope:
 			var r := minf(size.x, size.y) * 0.42
 			var w := maxf(size.x, size.y) * 1.5

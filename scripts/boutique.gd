@@ -51,7 +51,8 @@ static func refusal(a: Arsenal, id: String) -> String:
 
 static func buy(a: Arsenal, id: String, station: Node3D, pillage: Pillage) -> bool:
 	if refusal(a, id) != "":
-		G.play("denied", -6.0)
+		if not a.is_bot:
+			G.play("denied", -6.0)
 		return false
 	a.argent -= int(article(id).prix)
 	match id:
@@ -76,6 +77,7 @@ static func buy(a: Arsenal, id: String, station: Node3D, pillage: Pillage) -> bo
 				a.tactique = "fumigene"
 				a.tactique_n = 0
 			a.tactique_n += 1
-	G.play("buy", -4.0)
+	if not a.is_bot:
+		G.play("buy", -4.0)
 	a.changed.emit()
 	return true
