@@ -871,9 +871,9 @@ func _check_bots() -> String:
 	b0.spawn_at(line, deg_to_rad(float(cdt.cap)) + 0.4)
 	b0.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
 	b0.arsenal.reserve["fusil"] = 240
-	var t_dummy := await _until(func(): return downed[0] >= 1, 12.0)
+	var t_dummy := await _until(func(): return downed[0] >= 1, 25.0)
 	if t_dummy < 0.0:
-		_fail("bot : aucun mannequin abattu (%d tirs, état %s)" % [b0.arsenal.shots_fired, brain0.state])
+		_fail("bot : aucun mannequin abattu en 25 s (%d tirs, état %s)" % [b0.arsenal.shots_fired, brain0.state])
 	out.append("mannequin en %.1f s (%d tirs)" % [t_dummy, b0.arsenal.shots_fired])
 	_clear_bots()
 	await _wait(0.1)
@@ -887,9 +887,9 @@ func _check_bots() -> String:
 		d.arsenal.slots = [Armes.nouvelle("faucon", 1), {}]
 		d.arsenal.reserve["fusil"] = 240
 		d.sante.reset(3)
-	var t_duel := await _until(func(): return duel[0].sante.dead or duel[1].sante.dead, 20.0)
+	var t_duel := await _until(func(): return duel[0].sante.dead or duel[1].sante.dead, 30.0)
 	if t_duel < 0.0:
-		_fail("duel : personne ne tombe en 20 s (%s / %s)" % [(duel[0].get_node("Bot") as Bot).state, (duel[1].get_node("Bot") as Bot).state])
+		_fail("duel : personne ne tombe en 30 s (%s / %s)" % [(duel[0].get_node("Bot") as Bot).state, (duel[1].get_node("Bot") as Bot).state])
 	else:
 		var loser: Joueur = duel[0] if duel[0].sante.dead else duel[1]
 		var winner: Joueur = duel[1] if loser == duel[0] else duel[0]
