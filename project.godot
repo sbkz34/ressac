@@ -1,0 +1,56 @@
+; Engine configuration file.
+; Godot 4.6
+
+config_version=5
+
+[application]
+
+config/name="Ressac"
+config/description="Battle royale sur une petite île : on revient en jeu tant qu'un coéquipier tient le coup."
+config/version="0.0.1"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+config/icon="res://icon.png"
+boot_splash/bg_color=Color(0.05, 0.12, 0.18, 1)
+boot_splash/show_image=false
+
+[autoload]
+
+G="*res://scripts/game.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+window/vsync/vsync_mode=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=false
+pointing/emulate_mouse_from_touch=true
+
+[importer_defaults]
+
+texture={
+"compress/mode": 0,
+"mipmaps/generate": true,
+"detect_3d/compress_to": 0
+}
+
+[physics]
+
+3d/physics_engine="GodotPhysics3D"
+common/physics_ticks_per_second=60
+common/physics_interpolation=true
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+textures/default_filters/anisotropic_filtering_level=2
+anti_aliasing/quality/msaa_3d=0
+lights_and_shadows/directional_shadow/size=2048

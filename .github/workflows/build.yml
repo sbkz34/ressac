@@ -1,0 +1,85 @@
+name: Build APK
+
+# Vérifie l'île puis exporte l'APK Android avec Godot et le publie en release : la dernière version
+# est toujours à https://github.com/<owner>/<repo>/releases/latest/download/ressac.apk
+# (même chaîne que Dernière Vague).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.6.2
+  GODOT_RELEASE: 4.6.2-stable
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and the export templates
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/$GODOT_RELEASE"
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          unzip -q godot.zip && mv "Godot_v${GODOT_RELEASE}_linux.x86_64" "$HOME/godot" && rm godot.zip
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          unzip -q templates.tpz -d tpl && mv tpl/templates/* "$dest/" && rm -rf tpl templates.tpz
+          ls "$dest" | grep -i android
+
+      - name: Point Godot at the Android SDK and Java
+        run: |
+          set -euo pipefail
+          java_home="${JAVA_HOME_17_X64:-$JAVA_HOME}"
+          mkdir -p "$HOME/.config/godot"
+          for f in editor_settings-4.tres editor_settings-4.6.tres; do
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' \
+              "$ANDROID_SDK_ROOT" "$java_home" > "$HOME/.config/godot/$f"
+          done
+          ls "$ANDROID_SDK_ROOT/build-tools" | tail -3
+
+      - name: Import and export
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ github.workspace }}/android/release.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ressac
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ressac
+        run: |
+          set -euo pipefail
+          # Chaque build a un numéro de version plus grand : il s'installe par-dessus le précédent.
+          sed -i "s/^version\/code=.*/version\/code=${{ github.run_number }}/" export_presets.cfg
+          mkdir -p build
+          "$HOME/godot" --headless --import 2>&1 | tail -5
+          "$HOME/godot" --headless --export-release "Android" build/ressac.apk 2>&1 | tail -30
+          ls -la build
+          test -s build/ressac.apk
+
+      - name: Check the island (terrain, stairs, swimming, drone)
+        run: |
+          set -o pipefail
+          timeout 300 "$HOME/godot" --headless --path . -- --check 2>&1 | grep -E "\[ile\]|\[check\]|SCRIPT ERROR" | tee check.log
+          grep -q "\[check\] OK" check.log
+          ! grep -q "SCRIPT ERROR" check.log
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-${{ github.run_number }}"
+          gh release create "$tag" build/ressac.apk --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "Ressac — build ${{ github.run_number }}" --latest \
+            --notes "APK Android (arm64). Visite de l'Île du Lazaret (jalon 0). Téléchargez ressac.apk et installez-le ; les builds suivants s'installent par-dessus (même signature)."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ressac
+          path: build/
+          retention-days: 14
