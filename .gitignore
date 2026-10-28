@@ -1,0 +1,6 @@
+.godot/
+*.import.bak
+/build/
+/export/
+*.apk
+*.aab
