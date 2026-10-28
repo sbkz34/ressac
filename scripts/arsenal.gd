@@ -348,8 +348,13 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 	if best != "":
 		hit.emit(best, total)
 		if not is_bot:
-			_snd("killmarker" if best == "elimination" else "hitmarker", -4.0 if best == "elimination" else -8.0)
+			var m: Array = {"corps": ["marque_corps", -5.0], "tete": ["marque_tete", -4.0], "armure": ["marque_armure", -4.0],
+				"brise": ["armure_brisee", -2.0], "elimination": ["killmarker", -1.0]}.get(best, ["marque_corps", -5.0])
+			_snd(String(m[0]), float(m[1]), randf_range(0.97, 1.03))
 	_snd(String(a.son), -5.0, randf_range(0.96, 1.04), true)
+	# Tir sans silencieux : il apparaît sur la mini-carte des autres (les accessoires viendront).
+	if not bool(w.get("silencieux", false)):
+		G.report_shot(joueur)
 	view.shot(float(a.recul))
 	_bloom = minf(_bloom + 0.35 * float(a.recul), 4.0)
 	# Recul : la visée monte, avec un peu de dérive latérale.

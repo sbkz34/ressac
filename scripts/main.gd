@@ -505,6 +505,18 @@ func _check() -> void:
 	await _wait(2.0)
 	if player.global_position.y < -2.5 or not player.swimming:
 		_fail("nage : le joueur coule (%.1f m)" % player.global_position.y)
+	# En eau profonde, on reste en nage (pas d'aller-retour nage / marche à la surface).
+	var toggles := [0]
+	var was_sw := [player.swimming]
+	i.move = Vector2(0.3, -1)
+	await _until(func():
+		if player.swimming != was_sw[0]:
+			toggles[0] += 1
+			was_sw[0] = player.swimming
+		return false, 3.0)
+	i.move = Vector2.ZERO
+	if toggles[0] > 0:
+		_fail("nage : %d bascules nage / marche en 3 s" % toggles[0])
 	player.set_drone(true)
 	player.spawn_at(Vector3(0, 40, 0), 0.0)
 	player.set_drone(true)
@@ -1233,6 +1245,10 @@ func _tour() -> void:
 	partie.killed.emit("", "Galet", "brume", false, false)
 	partie.stats.eliminations = 1
 	hud._cross.add_damage(player.global_position + player.global_basis.x * -20.0)
+	player.sante.hp = 28.0
+	var now := Time.get_ticks_msec() / 1000.0
+	G.shots[1] = [player.global_position + Vector3(40, 0, -30), now, bots[0]]
+	G.shots[2] = [player.global_position + Vector3(-50, 0, -60), now - 1.5, bots[1]]
 	await _shot(dir, "40_partie_bots", 2)
 	show_lobby()
 	player.scripted = null

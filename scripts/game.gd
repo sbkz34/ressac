@@ -30,6 +30,8 @@ var settings := {
 }
 const SETTINGS_PATH := "user://settings.cfg"
 
+var shots := {}                # tireur (id) -> [position, heure] : tirs récents, pour les cartes
+const SHOT_VISIBLE := 3.5      # secondes pendant lesquelles un tir reste sur la carte
 var _sounds := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player := 0
@@ -61,7 +63,7 @@ func _ready() -> void:
 		add_child(p)
 		_players.append(p)
 	# Sons des autres combattants : placés dans l'espace, atténués avec la distance.
-	for i in 12:
+	for i in 20:
 		var p3 := AudioStreamPlayer3D.new()
 		p3.unit_size = 12.0
 		p3.max_distance = 320.0
@@ -132,6 +134,24 @@ func sound(name: String) -> AudioStream:
 		var path := "res://assets/sfx/%s.wav" % name
 		_sounds[name] = load(path) if ResourceLoader.exists(path) else null
 	return _sounds[name]
+
+
+func report_shot(by: Node3D) -> void:
+	shots[by.get_instance_id()] = [by.global_position, Time.get_ticks_msec() / 1000.0, by]
+
+
+## Tirs encore visibles : [position, âge en secondes, tireur].
+func recent_shots() -> Array:
+	var now := Time.get_ticks_msec() / 1000.0
+	var out := []
+	for k in shots.keys():
+		var sh: Array = shots[k]
+		var age := now - float(sh[1])
+		if age > SHOT_VISIBLE or not is_instance_valid(sh[2]):
+			shots.erase(k)
+		else:
+			out.append([sh[0], age, sh[2]])
+	return out
 
 
 func play_at(name: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:

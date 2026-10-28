@@ -49,6 +49,8 @@ var _panel_kind := ""
 var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
+var _mini: MiniMap
+var _hurt: HurtOverlay
 var _feed: Label
 var _feed_lines: Array = []       # [texte, temps restant]
 
@@ -68,9 +70,13 @@ func _ready() -> void:
 	_compass.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	_compass.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_compass.offset_top = 40
+	_mini = MiniMap.new()
+	_mini.position = Vector2(4, 4)
+	_mini.size = Vector2(MiniMap.SIDE, MiniMap.SIDE)
+	_frame.add_child(_mini)
 	_fps = _label(_frame, 16, Color(1, 1, 1, 0.7))
 	_fps.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	_fps.offset_left = 4
+	_fps.offset_left = MiniMap.SIDE + 14
 	_fps.offset_top = 4
 	_state = _label(_frame, 24, Color(1, 1, 1))
 	_state.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
@@ -98,15 +104,15 @@ func _ready() -> void:
 	_money = _label(_frame, 18, Color(0.6, 0.95, 0.55))
 	_money.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_money.offset_left = 4
-	_money.offset_top = 26
+	_money.offset_top = MiniMap.SIDE + 10
 	_alive_lbl = _label(_frame, 20, Color(1, 1, 1))
 	_alive_lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_alive_lbl.offset_left = 4
-	_alive_lbl.offset_top = 50
+	_alive_lbl.offset_top = MiniMap.SIDE + 32
 	_feed = _label(_frame, 16, Color(1, 1, 1, 0.92))
 	_feed.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_feed.offset_left = 4
-	_feed.offset_top = 78
+	_feed.offset_top = MiniMap.SIDE + 58
 	_vitals = Vitals.new()
 	_vitals.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_vitals.offset_left = -300
@@ -151,6 +157,11 @@ func _ready() -> void:
 	touch.map_pressed.connect(toggle_map)
 	touch.pause_pressed.connect(open_pause)
 
+	_hurt = HurtOverlay.new()
+	_hurt.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_hurt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_hurt)
+	move_child(_hurt, 0)
 	_gas = ColorRect.new()
 	_gas.color = Color(0.72, 0.8, 0.35, 0.0)
 	_gas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -190,6 +201,8 @@ func attach(p: Joueur) -> void:
 	player = p
 	player.touch = touch
 	_map.player = p
+	_mini.player = p
+	_hurt.sante = p.sante
 	player.state_changed.connect(func(_e): _update_help())
 	_cross.arsenal = p.arsenal
 	_vitals.arsenal = p.arsenal
@@ -197,10 +210,16 @@ func attach(p: Joueur) -> void:
 	p.arsenal.notice.connect(notify)
 	p.arsenal.shop_requested.connect(open_shop)
 	p.arsenal.loadout_requested.connect(open_loadout_choice)
-	p.sante.damaged.connect(func(_a, _z, _o, _b, _k):
+	p.sante.damaged.connect(func(_a, _z, on_armor: bool, broken: bool, _k):
 		var by := p.sante.last_attacker as Node3D
 		if by and is_instance_valid(by) and by != p and p.sante.last_cause in ["balle", "grenade"]:
-			_cross.add_damage(by.global_position))
+			_cross.add_damage(by.global_position)
+			_hurt.flash()
+			# Son de sa propre armure qui encaisse ou qui cède.
+			if broken:
+				G.play("armure_brisee", -5.0, 0.8)
+			elif on_armor:
+				G.play("marque_armure", -12.0, 0.75))
 
 
 func notify(t: String) -> void:
@@ -211,6 +230,7 @@ func notify(t: String) -> void:
 func set_partie(p: Partie) -> void:
 	partie = p
 	_map.partie = p
+	_mini.partie = p
 	_feed_lines.clear()
 	_feed.text = ""
 	if p:
@@ -251,11 +271,13 @@ func _refresh_feed() -> void:
 func set_avion(a: Avion) -> void:
 	avion = a
 	_map.avion = a
+	_mini.avion = a
 
 
 func set_pillage(p: Pillage) -> void:
 	pillage = p
 	_map.pillage = p
+	_mini.pillage = p
 
 
 # ------------------------------------------------------------------------------------------------
@@ -304,6 +326,7 @@ func frame_rect() -> Rect2:
 # ------------------------------------------------------------------------------------------------
 func toggle_map() -> void:
 	_map.visible = not _map.visible
+	_mini.visible = not _map.visible
 
 
 func open_pause() -> void:
@@ -737,6 +760,12 @@ class MapView:
 					draw_arc(cp, side / 50.0, 0, TAU, 24, Color(0.4, 1.0, 0.5), 2.0)
 				elif fouineur and ch.global_position.distance_to(player.global_position) < 90.0:
 					draw_rect(Rect2(cp - Vector2.ONE * side / 140.0, Vector2.ONE * side / 70.0), Color(1, 0.8, 0.3))
+		# Tirs ennemis récents (sans silencieux).
+		for sh in G.recent_shots():
+			if sh[2] == player:
+				continue
+			var sp: Vector2 = to_map.call(sh[0].x, sh[0].z)
+			draw_circle(sp, side / 110.0, Color(1, 0.15, 0.1, 1.0 - float(sh[1]) / G.SHOT_VISIBLE))
 		if is_instance_valid(avion):
 			var a: Vector2 = to_map.call(avion.start.x, avion.start.z)
 			var b: Vector2 = to_map.call(avion.end.x, avion.end.z)
@@ -761,6 +790,113 @@ class MapView:
 		for k in n:
 			if k % 2 == 0:
 				draw_arc(c, r, TAU * k / n, TAU * (k + 1) / n, 4, col, 2.0)
+
+class MiniMap:
+	extends Control
+	## Mini-carte en haut à gauche, qui tourne avec la vue (le haut = devant soi) : le relief,
+	## la Brume (cercle actuel et suivant), les largages, les tirs ennemis récents en rouge.
+	const SIDE := 190.0
+	const RANGE := 110.0        # mètres du centre au bord
+	var player: Joueur
+	var partie: Partie
+	var pillage: Pillage
+	var avion: Avion
+	var _tex: Texture2D
+	var _tex_ppm := 2.0         # pixels de l'image par mètre
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		clip_contents = true
+		_tex = load("res://assets/map/carte_fond.png")
+		_tex_ppm = float(_tex.get_width()) / float(G.data.get("monde", 640))
+
+	func _process(_d: float) -> void:
+		if is_visible_in_tree():
+			queue_redraw()
+
+	func _draw() -> void:
+		if player == null:
+			return
+		var c := size / 2.0
+		var k := size.x / 2.0 / RANGE              # pixels de l'écran par mètre
+		var yaw := player.rotation.y
+		var pp := player.global_position
+		var half := float(G.data.get("monde", 640)) / 2.0
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.16, 0.28))
+		draw_set_transform(c, yaw, Vector2.ONE * (k / _tex_ppm))
+		draw_texture(_tex, -Vector2(pp.x + half, pp.z + half) * _tex_ppm, Color(1, 1, 1, 0.92))
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+		var to_s := func(x: float, z: float) -> Vector2:
+			return c + Vector2(x - pp.x, z - pp.z).rotated(yaw) * k
+		if partie and partie.running and partie.brume.phase > 0:
+			var b := partie.brume
+			draw_arc(to_s.call(b.center.x, b.center.y), b.radius * k, 0, TAU, 96, Color(0.85, 0.95, 0.55, 0.95), 2.5)
+			draw_arc(to_s.call(b.next_center.x, b.next_center.y), b.next_radius * k, 0, TAU, 96, Color(1, 1, 1, 0.75), 1.5)
+		if pillage:
+			for ch in pillage.chests:
+				if is_instance_valid(ch) and ch.largage and ch.can_open():
+					draw_circle(to_s.call(ch.global_position.x, ch.global_position.z), 4.0, Color(0.4, 1.0, 0.5))
+		if is_instance_valid(avion):
+			draw_circle(to_s.call(avion.global_position.x, avion.global_position.z), 4.0, Color(1, 0.8, 0.2))
+		# Tirs ennemis : un point rouge qui s'estompe.
+		for sh in G.recent_shots():
+			if sh[2] == player:
+				continue
+			var sp: Vector2 = to_s.call(sh[0].x, sh[0].z)
+			var a := 1.0 - float(sh[1]) / G.SHOT_VISIBLE
+			draw_circle(sp, 5.0, Color(1, 0.12, 0.08, a))
+			draw_arc(sp, 5.0, 0, TAU, 12, Color(0, 0, 0, a * 0.8), 1.0)
+		# Soi-même au centre, tourné vers le haut ; le nord sur le bord.
+		var s := 7.0
+		var tri := PackedVector2Array([c + Vector2(0, -s * 1.4), c + Vector2(s, s), c + Vector2(-s, s)])
+		draw_colored_polygon(tri, Color(0.2, 0.9, 1.0))
+		draw_polyline(PackedVector2Array([tri[0], tri[1], tri[2], tri[0]]), Color(0, 0, 0), 1.5)
+		var north := Vector2(0, -1).rotated(yaw)
+		var edge := c + north * (size.x / 2.0 - 11.0)
+		var font := ThemeDB.fallback_font
+		draw_circle(edge, 9.0, Color(0, 0, 0, 0.55))
+		draw_string(font, edge + Vector2(-5, 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.85, 0.45))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.5), false, 2.0)
+
+
+class HurtOverlay:
+	extends ColorRect
+	## Bords de l'écran qui rougissent quand la vie baisse (et battent sous 35 points), plus un
+	## éclat rouge à chaque coup reçu.
+	var sante: Sante
+	var _flash := 0.0
+	var _mat: ShaderMaterial
+
+	func _ready() -> void:
+		var sh := Shader.new()
+		sh.code = """shader_type canvas_item;
+uniform float niveau = 0.0;
+uniform float eclat = 0.0;
+void fragment() {
+	vec2 uv = (UV - 0.5) * vec2(1.0, 0.8);
+	float edge = smoothstep(0.22, 0.72, length(uv));
+	float a = edge * (0.75 * niveau + 0.45 * eclat) + 0.06 * niveau;
+	COLOR = vec4(0.7, 0.0, 0.0, clamp(a, 0.0, 0.85));
+}"""
+		_mat = ShaderMaterial.new()
+		_mat.shader = sh
+		material = _mat
+		color = Color(1, 1, 1, 1)
+
+	func flash() -> void:
+		_flash = 1.0
+
+	func _process(delta: float) -> void:
+		_flash = maxf(0.0, _flash - delta * 2.5)
+		var lvl := 0.0
+		if sante and not sante.dead:
+			lvl = clampf((60.0 - sante.hp) / 60.0, 0.0, 1.0)
+			if sante.hp < 35.0:
+				lvl *= 0.8 + 0.2 * sin(Time.get_ticks_msec() / 1000.0 * TAU * 1.4)
+		visible = lvl > 0.01 or _flash > 0.01
+		_mat.set_shader_parameter("niveau", lvl)
+		_mat.set_shader_parameter("eclat", _flash)
+
 
 class Crosshair:
 	extends Control

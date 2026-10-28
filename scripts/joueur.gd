@@ -109,6 +109,8 @@ var _step := 0.0
 var _fall_peak := 0.0
 var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
 var _hb_on := true
+var _floor_kind := "terre"     # sol sous les pieds : "terre", "dur" ou "eau" (bruit des pas)
+var _stroke := 0.0
 
 
 func _ready() -> void:
@@ -146,6 +148,11 @@ func _ready() -> void:
 	if is_bot:
 		corps = BotCorps.new()
 		add_child(corps)
+	else:
+		var sons := SonsJoueur.new()
+		sons.name = "Sons"
+		sons.joueur = self
+		add_child(sons)
 
 
 func _apply_shape(p: int) -> void:
@@ -398,8 +405,10 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 	var on_floor := is_on_floor()
 	var hv := Vector2(velocity.x, velocity.z)
 	var was_swimming := swimming
-	swimming = global_position.y < WATER_LEVEL
+	swimming = _update_swimming(was_swimming)
 	if swimming and not was_swimming:
+		if velocity.y < -3.0 or hspeed > 5.0:
+			_snd("plouf", -4.0 if velocity.y < -8.0 else -9.0, randf_range(0.9, 1.1))
 		sprinting = false
 		_end_tac()
 		_set_posture(Posture.DEBOUT, true)
@@ -525,13 +534,52 @@ func _step_up(dir: Vector3) -> void:
 			return
 
 
+## Nage : on nage quand l'eau est assez profonde pour ne plus avoir pied (avec une marge entre
+## l'entrée et la sortie, sinon on alterne nage et marche à la surface).
+func _update_swimming(was: bool) -> bool:
+	if global_position.y > WATER_LEVEL + 0.45:
+		return false
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 0.6, 0), global_position - Vector3(0, 4.0, 0), G.L_WORLD, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var floor_y: float = hit.position.y if hit else -100.0
+	var depth := WATER_LEVEL - floor_y
+	if was:
+		return depth > 1.15
+	return depth > 1.35 and global_position.y < WATER_LEVEL + 0.05
+
+
+## Sol sous les pieds (pour le bruit des pas) : le terrain, un sol construit, ou de l'eau.
+func _detect_floor() -> void:
+	if global_position.y < WATER_LEVEL + 0.35:
+		_floor_kind = "eau"
+		return
+	for k in get_slide_collision_count():
+		var c := get_slide_collision(k)
+		if c.get_normal().y > 0.6:
+			var col := c.get_collider() as Node
+			_floor_kind = "terre" if col and col.name == "Sol" else "dur"
+			return
+
+
 func _footsteps(delta: float) -> void:
 	var hs := Vector2(velocity.x, velocity.z).length()
+	if swimming:
+		_stroke += delta * (1.0 if hs > 1.0 else 0.0)
+		if _stroke > 1.1:
+			_stroke = 0.0
+			_snd("brasse", -16.0, randf_range(0.9, 1.1))
+		return
 	if is_on_floor() and hs > 1.0 and posture != Posture.COUCHE:
 		_step += hs * delta
 		if _step > (2.4 if sprinting else 1.9):
 			_step = 0.0
-			_snd("step", -14.0 if posture == Posture.DEBOUT else -20.0, randf_range(0.85, 1.15))
+			_detect_floor()
+			var vol := -17.0
+			if sprinting:
+				vol = -14.0
+			elif posture == Posture.ACCROUPI:
+				vol = -25.0
+			_snd("pas_%s_%d" % [_floor_kind, randi_range(1, 4)], vol, randf_range(0.92, 1.08))
 
 
 func _end_tac() -> void:
@@ -648,7 +696,7 @@ func _try_mantle() -> bool:
 	_mantle_dur = 0.22 + 0.12 * (_mantle_to.y - _mantle_from.y)
 	velocity = Vector3.ZERO
 	_set_etat(Etat.ESCALADE)
-	_snd("step", -8.0, 0.7)
+	_snd("pas_dur_%d" % randi_range(1, 4), -12.0, 0.8)
 	return true
 
 
@@ -712,7 +760,7 @@ func _sim_avion(i: Intentions) -> void:
 	if i.jump or avion.must_jump():
 		var v := avion.velocity_vector() * 0.3
 		start_freefall(avion.global_position + avion.global_basis * Vector3(0, -3.0, 14.0), v)
-		_snd("jump_land", -8.0, 0.5)
+		_snd("sortie_avion", -8.0, randf_range(0.95, 1.05))
 
 
 func _sim_chute_libre(i: Intentions, delta: float) -> void:
@@ -739,7 +787,7 @@ func _open_chute() -> void:
 	_end_tac()
 	_set_posture(Posture.DEBOUT, true)
 	_set_etat(Etat.PARACHUTE)
-	_snd("plank_place", -6.0, 0.6)
+	_snd("voile", -6.0, randf_range(0.95, 1.05))
 
 
 func _sim_parachute(i: Intentions, delta: float) -> void:
