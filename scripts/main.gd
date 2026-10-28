@@ -824,6 +824,23 @@ func _check() -> void:
 	# ---------------------------------------------------------------------------------------
 	var bot_stats := await _check_bots()
 
+	# Lobby : les boutons du nombre de bots et de la difficulté font le tour des choix.
+	var bots0 := int(G.settings.bots)
+	var seen := []
+	for k in 4:
+		lobby.bots_button.pressed.emit()
+		seen.append(int(G.settings.bots))
+	if seen.size() != 4 or seen[3] != bots0 or seen[0] == bots0 or not lobby.bots_button.text.contains(str(seen[3])):
+		_fail("lobby : nombre de bots %s, bouton « %s »" % [seen, lobby.bots_button.text])
+	var lvl0 := int(G.settings.difficulte)
+	lobby.level_button.pressed.emit()
+	if int(G.settings.difficulte) == lvl0:
+		_fail("lobby : difficulté inchangée")
+	for k in 2:
+		lobby.level_button.pressed.emit()
+	if int(G.settings.difficulte) != lvl0:
+		_fail("lobby : la difficulté ne revient pas à %d" % lvl0)
+
 	# Interface : avec une grande taille et une marge, le cadre reste dans l'écran.
 	G.settings.hud_scale = 1.3
 	G.settings.hud_margin = 0.05

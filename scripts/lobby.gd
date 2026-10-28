@@ -15,6 +15,8 @@ var _editor: VBoxContainer
 var _editing := 0
 var _pickers := {}
 var _first: Button
+var bots_button: Button
+var level_button: Button
 
 
 func _ready() -> void:
@@ -34,16 +36,10 @@ func _ready() -> void:
 	sub.position = Vector2(76, 138)
 	_menu = _column(Vector2(70, 210))
 	_first = _button(_menu, "Jouer — Résurgence", func(): play.emit())
-	var bots_btn: Button
-	bots_btn = _button(_menu, _bots_text(), func():
-		var opts := [0, 7, 15, 23]
-		var k := opts.find(int(G.settings.bots))
-		G.set_setting("bots", opts[(k + 1) % opts.size()])
-		bots_btn.text = _bots_text())
-	var lvl_btn: Button
-	lvl_btn = _button(_menu, _level_text(), func():
-		G.set_setting("difficulte", (int(G.settings.difficulte) + 1) % 3)
-		lvl_btn.text = _level_text())
+	# (Les boutons sont des membres : une fonction anonyme copie les variables locales au
+	# moment où elle est créée, avant que le bouton existe.)
+	bots_button = _button(_menu, _bots_text(), _next_bots)
+	level_button = _button(_menu, _level_text(), _next_level)
 	_button(_menu, "Entraînement (champ de tir)", func(): training.emit())
 	_button(_menu, "Classes", _show_classes)
 	_button(_menu, "Réglages", func(): settings.emit())
@@ -52,6 +48,18 @@ func _ready() -> void:
 	_editor = _column(Vector2(70, 190))
 	_classes.visible = false
 	_editor.visible = false
+
+
+func _next_bots() -> void:
+	var opts := [0, 7, 15, 23]
+	var k := opts.find(int(G.settings.bots))
+	G.set_setting("bots", opts[(k + 1) % opts.size()])
+	bots_button.text = _bots_text()
+
+
+func _next_level() -> void:
+	G.set_setting("difficulte", (int(G.settings.difficulte) + 1) % 3)
+	level_button.text = _level_text()
 
 
 func _bots_text() -> String:

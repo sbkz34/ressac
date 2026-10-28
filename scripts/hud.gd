@@ -673,6 +673,9 @@ func _process(delta: float) -> void:
 		var w := a.current()
 		if not w.is_empty() and int(w.chargeur) == 0 and a.can_use_weapon():
 			_prompt.text = "Recharger (%s)" % {"pad": "X", "touch": "RECH."}.get(G.input_mode, "R") if int(a.reserve[Armes.info(w.id).munition]) > 0 else "Plus de munitions"
+		elif a.plates > 0 and a.plate_t <= 0.0 and player.sante.armor < player.sante.armor_max - 1.0 and a.can_use_weapon():
+			# Rappel : comment remettre une plaque (maintenir).
+			_prompt.text = "Plaque : maintenir %s" % {"pad": "croix haut", "touch": "PLAQUE"}.get(G.input_mode, "4")
 	if _panel.visible:
 		_prompt.text = ""
 	if not a.can_use_weapon():
