@@ -8,6 +8,7 @@ var ile: Ile
 var player: Joueur
 var hud: Hud
 var avion: Avion
+var pillage: Pillage
 var rng := RandomNumberGenerator.new()
 
 
@@ -22,6 +23,10 @@ func _ready() -> void:
 	player = Joueur.new()
 	player.name = "Joueur"
 	add_child(player)
+	pillage = Pillage.new()
+	pillage.name = "Pillage"
+	add_child(pillage)
+	player.arsenal.pillage = pillage
 	hud = Hud.new()
 	add_child(hud)
 	hud.attach(player)
@@ -30,6 +35,10 @@ func _ready() -> void:
 	# La physique doit avoir enregistré les formes avant de lancer des rayons.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
+	pillage.populate(ile, 1234 if G.check_mode or G.tour_mode else randi())
+	pillage.build_range(ile)
+	print("[butin] %d objets, %d coffres, %d mannequins" % [pillage.items.size(), pillage.chests.size(), pillage.targets.size()])
+	player.arsenal.starting_kit()
 	start_visit()
 	if G.check_mode:
 		_check()
@@ -86,6 +95,16 @@ func _press(what: String) -> void:
 		"jump": player.scripted.jump = true
 		"crouch": player.scripted.crouch = true
 		"sprint": player.scripted.sprint = true
+		"interact": player.scripted.interact = true
+		"reload": player.scripted.reload = true
+	await get_tree().physics_frame
+
+
+func _press_hold_fire() -> void:
+	player.scripted.fire_held = true
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	player.scripted.fire_held = false
 	await get_tree().physics_frame
 
 
@@ -306,6 +325,143 @@ func _check() -> void:
 		_fail("drone : trop lent (z = %.1f)" % player.global_position.z)
 	player.set_drone(false)
 
+	# ---------------------------------------------------------------------------------------
+	# Combat
+	# ---------------------------------------------------------------------------------------
+	var ar := player.arsenal
+	ar.starting_kit()
+	var kinds := {}
+	ar.hit.connect(func(k: String, _a: float): kinds[k] = true)
+
+	# Butin : chaque lieu en a, et chaque objet repose sur une surface.
+	for l in G.data.lieux:
+		var n := 0
+		for b in pillage.items:
+			if Vector2(b.global_position.x - float(l.x), b.global_position.z - float(l.z)).length() < float(l.rayon) + 10.0:
+				n += 1
+		if n < 2:
+			_fail("butin : seulement %d objets au %s" % [n, l.nom])
+	var floating := 0
+	for b in pillage.items:
+		var q := PhysicsRayQueryParameters3D.create(b.global_position + Vector3(0, 0.3, 0), b.global_position - Vector3(0, 0.6, 0), G.L_WORLD)
+		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			floating += 1
+			print("[check] objet en l'air : ", b.label(), " ", b.global_position, " ", G.where(b.global_position))
+	if floating > 0:
+		_fail("butin : %d objets ne reposent sur rien" % floating)
+
+	# Ramasser une arme posée devant soi (la main libre la prend).
+	player.spawn_at(lane, 0.0)
+	await _wait(0.2)
+	var ground_w := pillage.spawn(Butin.make_arme(Armes.nouvelle("faucon", 1)), player.global_position + Vector3(0, 0, -1.2))
+	await _wait(0.1)
+	if ar.target_item != ground_w:
+		_fail("ramassage : l'arme devant soi n'est pas proposée")
+	await _press("interact")
+	if ar.current().get("id", "") != "faucon" or ar.other().get("id", "") != "p9" or is_instance_valid(ground_w) and not ground_w.is_queued_for_deletion():
+		_fail("ramassage : %s / %s" % [ar.current(), ar.other()])
+
+	# Munitions ramassées en passant dessus.
+	ar.reserve["fusil"] = 0
+	pillage.spawn(Butin.make_munitions("fusil", 60), player.global_position + Vector3(0, 0.02, 0))
+	await _wait(0.1)
+	if int(ar.reserve["fusil"]) != 60:
+		_fail("munitions : %d au lieu de 60" % ar.reserve["fusil"])
+
+	# Rechargement : le chargeur se remplit depuis la réserve.
+	ar.current().chargeur = 5
+	await _press("reload")
+	await _wait(2.4)
+	var size := Armes.taille_chargeur("faucon", 1)
+	if int(ar.current().chargeur) != size or int(ar.reserve["fusil"]) != 60 - (size - 5):
+		_fail("rechargement : %d dans le chargeur, %d en réserve" % [ar.current().chargeur, ar.reserve["fusil"]])
+
+	# Champ de tir : fusil d'assaut sur le mannequin à 10 m, en visant, recul compensé.
+	ar.refill()
+	var cdt: Dictionary = G.data.champ_de_tir
+	var line := Vector3(float(cdt.x), 0, float(cdt.z))
+	line.y = ile.ground_at(line.x, line.z) + 0.1
+	player.spawn_at(line, deg_to_rad(float(cdt.cap)))
+	await _wait(0.2)
+	var t10: Cible = pillage.targets.filter(func(t): return float(t.get_meta("distance")) == 10.0)[0]
+	var t70: Cible = pillage.targets.filter(func(t): return float(t.get_meta("distance")) == 70.0)[0]
+	ar.slots[ar.cur] = Armes.nouvelle("faucon", 0)
+	ar.view.set_weapon(ar.current(), false)
+	i.ads_held = true
+	await _wait(0.5)
+	var shots0 := ar.shots_fired
+	i.fire_held = true
+	var killed_in := -1
+	for k in 120:
+		player.look_at_point(t10.aim_point())
+		await get_tree().physics_frame
+		if t10.sante.dead:
+			killed_in = ar.shots_fired - shots0
+			break
+	i.fire_held = false
+	var expected := Armes.coups_pour_tuer("faucon", 10.0)
+	if killed_in != expected:
+		_fail("Faucon à 10 m : %d balles au lieu de %d" % [killed_in, expected])
+	for k in ["armure", "brise", "elimination"]:
+		if not kinds.has(k):
+			_fail("marqueur de touche manquant : %s" % k)
+
+	# Fusil de précision : une balle dans la tête à 70 m traverse l'armure pleine.
+	ar.slots[ar.cur] = Armes.nouvelle("aiguille", 0)
+	ar.view.set_weapon(ar.current(), false)
+	await _wait(1.6)
+	player.look_at_point(t70.global_position + Vector3(0, 1.62, 0))
+	await _wait(0.05)
+	player.look_at_point(t70.global_position + Vector3(0, 1.62, 0))
+	await _press_hold_fire()
+	if not t70.sante.dead:
+		_fail("Aiguille : la tête à 70 m ne tue pas (armure %.0f, vie %.0f)" % [t70.sante.armor, t70.sante.hp])
+	i.ads_held = false
+
+	# Portée : le fusil à pompe ne fait presque plus rien à 25 m.
+	if Armes.degats("grele", 25.0, "torse") > 0.5 * Armes.degats("grele", 3.0, "torse"):
+		_fail("Grêle : pas assez de perte de dégâts à 25 m")
+	# En visant, on se déplace moins vite.
+	ar.ads = 1.0
+	var mm := ar.move_mult()
+	ar.ads = 0.0
+	if mm > 0.65:
+		_fail("visée : vitesse %.2f" % mm)
+
+	# Plaques : l'armure prend les dégâts, une plaque répare un segment, la vie se régénère.
+	var s := player.sante
+	s.reset(3)
+	s.take(120.0)
+	if absf(s.armor - 30.0) > 0.1 or s.hp < 99.9:
+		_fail("armure : %.0f d'armure, %.0f de vie après 120 dégâts" % [s.armor, s.hp])
+	var plates0 := ar.plates
+	i.plate_held = true
+	await _wait(Arsenal.PLATE_TIME * 2.0 + 0.15)
+	i.plate_held = false
+	if absf(s.armor - 100.0) > 0.1 or ar.plates != plates0 - 2:
+		_fail("plaques : armure %.0f, %d dans le sac" % [s.armor, ar.plates])
+	s.take(150.0)
+	var hurt := s.hp
+	await _wait(Sante.REGEN_DELAY + 2.0)
+	if hurt > 60.0 or s.hp < 99.9:
+		_fail("régénération : %.0f puis %.0f" % [hurt, s.hp])
+
+	# Coffre : on l'ouvre, il répand son contenu.
+	var chest: Coffre = pillage.chests.filter(func(c): return not c.ravitaillement)[0]
+	var front := -chest.global_basis.z
+	player.spawn_at(chest.global_position + front * 1.3 + Vector3(0, 0.1, 0), atan2(front.x, front.z))
+	await _wait(0.2)
+	var near_weapons := func() -> int:
+		return pillage.items.filter(func(b): return b.type == Butin.Type.ARME and b.global_position.distance_to(chest.global_position) < 2.5).size()
+	var before: int = near_weapons.call()
+	if ar.target_item != chest:
+		_fail("coffre : pas proposé (%s)" % ar.interact_label())
+	await _press("interact")
+	if not chest.is_open or near_weapons.call() < before + 1:
+		_fail("coffre : ouvert %s, %d armes en plus" % [chest.is_open, near_weapons.call() - before])
+	i.ads_held = false
+	i.fire_held = false
+
 	# Interface : avec une grande taille et une marge, le cadre reste dans l'écran.
 	G.settings.hud_scale = 1.3
 	G.settings.hud_margin = 0.05
@@ -323,7 +479,7 @@ func _check() -> void:
 
 	player.scripted = null
 	if _errors.is_empty():
-		print("[check] OK (glissade %.1f m/s, cancel %.1f m/s, escalier %.1f m, parachute ouvert à %.0f m)" % [slide_speed, cancel_speed, climbed, opened_at])
+		print("[check] OK (glissade %.1f m/s, cancel %.1f m/s, escalier %.1f m, parachute ouvert à %.0f m, Faucon %d balles, %d objets au sol)" % [slide_speed, cancel_speed, climbed, opened_at, killed_in, pillage.items.size()])
 	get_tree().quit(0 if _errors.is_empty() else 1)
 
 
@@ -393,6 +549,48 @@ func _tour() -> void:
 	hud.toggle_map()
 	await _shot(dir, "23_carte")
 	hud.toggle_map()
+	# Combat : champ de tir, visée, lunette, butin dans un bâtiment.
+	var ar := player.arsenal
+	ar.refill()
+	var cdt: Dictionary = G.data.champ_de_tir
+	var line := Vector3(float(cdt.x), 0, float(cdt.z))
+	line.y = ile.ground_at(line.x, line.z) + 0.1
+	player.spawn_at(line, deg_to_rad(float(cdt.cap)))
+	ar.slots = [Armes.nouvelle("faucon", 2), Armes.nouvelle("aiguille", 3)]
+	ar.cur = 0
+	ar.view.set_weapon(ar.current(), false)
+	player.scripted = Intentions.new()
+	var t50: Cible = pillage.targets.filter(func(t): return float(t.get_meta("distance")) == 50.0)[0]
+	player.look_at_point(t50.aim_point())
+	await _shot(dir, "25_champ_de_tir")
+	player.scripted.ads_held = true
+	await _wait(0.6)
+	player.look_at_point(t50.aim_point())
+	await _shot(dir, "26_visee")
+	player.scripted.ads_held = false
+	ar.cur = 1
+	ar.view.set_weapon(ar.current(), false)
+	await _wait(0.3)
+	player.scripted.ads_held = true
+	await _wait(0.8)
+	var t70: Cible = pillage.targets.filter(func(t): return float(t.get_meta("distance")) == 70.0)[0]
+	player.look_at_point(t70.global_position + Vector3(0, 1.5, 0))
+	await _shot(dir, "27_lunette")
+	player.scripted.ads_held = false
+	# Butin au rez-de-chaussée d'un bâtiment du Lazaret.
+	var lz: Dictionary = G.data.lieux.filter(func(l): return l.id == "lazaret")[0]
+	var best: Butin = null
+	for b in pillage.items:
+		if b.type == Butin.Type.ARME and absf(b.global_position.y - float(lz.h)) < 0.3 \
+				and Vector2(b.global_position.x - float(lz.x), b.global_position.z - float(lz.z)).length() < 40.0:
+			best = b
+			break
+	if best:
+		player.spawn_at(best.global_position + Vector3(2.2, 0.05, 0.4), PI / 2)
+		player.look_at_point(best.global_position + Vector3(0, 0.3, 0))
+		await _wait(0.2)
+		await _shot(dir, "28_butin")
+	player.scripted = null
 	hud.open_pause()
 	await _shot(dir, "24_pause")
 	get_tree().quit()

@@ -36,7 +36,7 @@
   ],
   "lieux": [
     {
-      "id": "lazaret", "etiquette": [-15, -52], "nom": "Le Lazaret", "x": 0, "z": -15, "rayon": 70, "h": 15, "sol": "paves",
+      "id": "lazaret", "etiquette": [-15, -52], "nom": "Le Lazaret", "x": 0, "z": -15, "rayon": 70, "h": 15, "sol": "paves", "butin": 3,
       "role": "Point central, grand complexe sur trois niveaux autour d'une cour. Meilleur butin, combats intenses.",
       "batiments": [
         {"t": "bat", "x": 0, "z": -27, "w": 60, "d": 10, "n": 3, "m": "enduit", "portes": ["s", "n"], "toit": true},
@@ -53,7 +53,7 @@
       ]
     },
     {
-      "id": "phare", "etiquette": [0, -24], "nom": "Le Phare", "x": -262, "z": -38, "rayon": 24, "h": 20, "sol": "dirt",
+      "id": "phare", "etiquette": [0, -24], "nom": "Le Phare", "x": -262, "z": -38, "rayon": 24, "h": 20, "sol": "dirt", "butin": 1,
       "role": "Pointe ouest isolée. Vue sur tout le flanc ouest, peu de butin.",
       "batiments": [
         {"t": "phare", "x": 0, "z": 0, "h": 26},
@@ -62,7 +62,7 @@
       ]
     },
     {
-      "id": "batterie", "etiquette": [0, -31], "nom": "La Batterie", "x": -140, "z": -110, "rayon": 40, "h": 27, "sol": "concrete",
+      "id": "batterie", "etiquette": [0, -31], "nom": "La Batterie", "x": -140, "z": -110, "rayon": 40, "h": 27, "sol": "concrete", "butin": 2,
       "role": "Fortifications côtières sur la falaise nord-ouest. Bunkers, tranchées, couverture solide.",
       "batiments": [
         {"t": "bunker", "x": -20, "z": -6, "r": 0, "w": 12, "d": 8, "portes": ["s", "n"]},
@@ -76,7 +76,7 @@
       ]
     },
     {
-      "id": "semaphore", "etiquette": [0, -25], "nom": "Le Sémaphore", "x": 155, "z": -130, "rayon": 28, "h": 38, "sol": "concrete",
+      "id": "semaphore", "etiquette": [0, -25], "nom": "Le Sémaphore", "x": 155, "z": -130, "rayon": 28, "h": 38, "sol": "concrete", "butin": 2,
       "role": "Point le plus haut de l'île. Antenne visible de partout, position de tir dominante.",
       "batiments": [
         {"t": "bat", "x": 0, "z": 0, "w": 16, "d": 10, "n": 2, "m": "enduit", "portes": ["s", "w"], "toit": true},
@@ -85,7 +85,7 @@
       ]
     },
     {
-      "id": "citerne", "etiquette": [0, 21], "nom": "La Citerne", "x": 80, "z": -50, "rayon": 24, "h": 18, "sol": "dirt",
+      "id": "citerne", "etiquette": [0, 21], "nom": "La Citerne", "x": 80, "z": -50, "rayon": 24, "h": 18, "sol": "dirt", "butin": 1,
       "role": "Château d'eau et station de pompage entre le Lazaret et le Sémaphore. Carrefour.",
       "batiments": [
         {"t": "citerne", "x": 0, "z": 0},
@@ -95,7 +95,7 @@
       ]
     },
     {
-      "id": "conserverie", "etiquette": [-5, -55], "nom": "La Conserverie", "x": 215, "z": 5, "rayon": 48, "h": 4, "sol": "concrete",
+      "id": "conserverie", "etiquette": [-5, -55], "nom": "La Conserverie", "x": 215, "z": 5, "rayon": 48, "h": 4, "sol": "concrete", "butin": 3,
       "role": "Usine de poisson sur la côte est. Grands hangars, quai, cheminée. Beaucoup de butin.",
       "batiments": [
         {"t": "hangar", "x": -10, "z": 0, "w": 22, "d": 40, "h": 8, "m": "brick", "portes": ["e", "w", "n", "s"]},
@@ -110,7 +110,7 @@
       ]
     },
     {
-      "id": "port", "etiquette": [0, -30], "nom": "Le Port", "x": 45, "z": 106, "rayon": 42, "h": 2.5, "sol": "paves",
+      "id": "port", "etiquette": [0, -30], "nom": "Le Port", "x": 45, "z": 106, "rayon": 42, "h": 2.5, "sol": "paves", "butin": 2,
       "role": "Port de pêche au fond de l'anse sud. Pontons, capitainerie, hangars à bateaux.",
       "batiments": [
         {"t": "quai", "x": 0, "z": 34, "w": 10, "d": 36},
@@ -125,7 +125,7 @@
       ]
     },
     {
-      "id": "cabanons", "etiquette": [0, -35], "nom": "Les Cabanons", "x": -140, "z": 88, "rayon": 52, "h": 6, "sol": "dirt",
+      "id": "cabanons", "etiquette": [0, -35], "nom": "Les Cabanons", "x": -140, "z": 88, "rayon": 52, "h": 6, "sol": "dirt", "butin": 2,
       "role": "Village de pêcheurs serré : ruelles, toits accessibles, combats à courte portée.",
       "batiments": [
         {"t": "bat", "x": -30, "z": -20, "r": 8, "w": 8, "d": 7, "n": 2, "m": "enduit", "portes": ["s"], "toit": true},
@@ -145,7 +145,7 @@
       ]
     },
     {
-      "id": "salins", "etiquette": [0, -5], "nom": "Les Salins", "x": 165, "z": 100, "rayon": 50, "h": 1.4, "sol": "dirt",
+      "id": "salins", "etiquette": [0, -5], "nom": "Les Salins", "x": 165, "z": 100, "rayon": 50, "h": 1.4, "sol": "dirt", "butin": 1,
       "role": "Bassins de sel plats et découverts au sud-est. Traversée risquée, peu de couverture.",
       "batiments": [
         {"t": "bassins", "x": 8, "z": 6, "w": 66, "d": 44, "nx": 3, "nz": 3},
@@ -156,7 +156,7 @@
       ]
     },
     {
-      "id": "cimetiere", "etiquette": [-30, -26], "nom": "Le Cimetière marin", "x": -75, "z": 15, "rayon": 24, "h": 11, "sol": "dirt",
+      "id": "cimetiere", "etiquette": [-30, -26], "nom": "Le Cimetière marin", "x": -75, "z": 15, "rayon": 24, "h": 11, "sol": "dirt", "butin": 1,
       "role": "Petit enclos muré avec chapelle entre le Lazaret et les Cabanons. Couverture basse.",
       "batiments": [
         {"t": "mur", "x": 0, "z": -12, "r": 0, "w": 30, "h": 2.2},
@@ -176,6 +176,10 @@
     {"lieu": "cabanons", "x": -133, "z": 98},
     {"lieu": "conserverie", "x": 216, "z": 31},
     {"lieu": "semaphore", "x": 151, "z": -118}
+  ],
+  "champ_de_tir": {"x": -176, "z": -80, "cap": -90, "distances": [10, 25, 50, 70]},
+  "zones_degagees": [
+    {"nom": "champ de tir", "x": -141, "z": -80, "rx": 42, "rz": 9, "h": 27}
   ],
   "depart": {"x": 0, "z": -10, "cap": 180}
 }

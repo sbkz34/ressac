@@ -87,6 +87,15 @@ for p in DATA["lieux"]:
     w = smoothstep(p["rayon"] + 26, p["rayon"], d) * on_land
     h = h * (1 - w) + p["h"] * w
 
+# Zones dégagées avec une hauteur (le champ de tir) : un plateau rectangulaire bien plat.
+for c in DATA.get("zones_degagees", []):
+    if "h" not in c:
+        continue
+    ox = np.maximum(np.abs(X - c["x"]) - c["rx"], 0.0)
+    oz = np.maximum(np.abs(Z - c["z"]) - c["rz"], 0.0)
+    w = smoothstep(16.0, 0.0, np.sqrt(ox ** 2 + oz ** 2)) * on_land
+    h = h * (1 - w) + c["h"] * w
+
 # Chemins : on adoucit le relief le long des routes.
 road_mask = Image.new("L", (N, N), 0)
 dr = ImageDraw.Draw(road_mask)
@@ -256,24 +265,28 @@ def pick(count, ok, tries=40000):
     return found
 
 
+def cleared(x, z):
+    return any(abs(x - c["x"]) < c["rx"] and abs(z - c["z"]) < c["rz"] for c in DATA.get("zones_degagees", []))
+
+
 def near_poi(x, z, margin):
     return any(math.hypot(x - p["x"], z - p["z"]) < p["rayon"] * 0.7 + margin for p in DATA["lieux"])
 
 
 def ok_pine(x, z):
     return (sample(grass, x, z) > 0.6 and 2.5 < sample(hf, x, z) < 34 and sample(slope, x, z) < 0.45
-            and sample(free_d, x, z) > 7 and sample(path, x, z) < 0.2 and not near_poi(x, z, -6)
+            and sample(free_d, x, z) > 7 and sample(path, x, z) < 0.2 and not near_poi(x, z, -6) and not cleared(x, z)
             and vrng.random() < 0.25 + 0.75 * max(0.0, sample(forest, x, z)))
 
 
 def ok_bush(x, z):
     return (sample(grass, x, z) > 0.4 and sample(hf, x, z) > 1.5 and sample(slope, x, z) < 0.7
-            and sample(free_d, x, z) > 3 and sample(path, x, z) < 0.3)
+            and sample(free_d, x, z) > 3 and sample(path, x, z) < 0.3 and not cleared(x, z))
 
 
 def ok_rock(x, z):
     return (sample(lf, x, z) > -0.01 and (sample(rock, x, z) > 0.35 or (sample(sand, x, z) > 0.5 and vrng.random() < 0.08))
-            and sample(free_d, x, z) > 5 and sample(path, x, z) < 0.2)
+            and sample(free_d, x, z) > 5 and sample(path, x, z) < 0.2 and not cleared(x, z))
 
 
 for x, z in pick(240, ok_pine):

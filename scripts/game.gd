@@ -7,6 +7,7 @@ signal settings_changed
 
 const L_WORLD := 1
 const L_PLAYER := 2
+const L_HITBOX := 4    # zones de touche des combattants (tête, torse, jambes)
 
 var input_mode := "kbm"   # "kbm", "pad" ou "touch"
 var tour_mode := false
@@ -129,7 +130,8 @@ func play(name: String, volume_db := 0.0, pitch := 1.0) -> void:
 # ------------------------------------------------------------------------------------------------
 # Commandes : clavier / souris, manette (n'importe quel numéro de manette), tactile à part.
 # Disposition de la manette proche de Warzone : A sauter, B accroupi (maintenir = couché),
-# L3 sprint (encore L3 en sprintant = sprint tactique), Select carte, Start pause.
+# L3 sprint (encore L3 en sprintant = sprint tactique), RT tirer, LT viser, X ramasser ou
+# recharger, Y changer d'arme, RB plaque d'armure, Select carte, Start pause.
 # ------------------------------------------------------------------------------------------------
 func _add(action: String, deadzone := 0.2) -> void:
 	if not InputMap.has_action(action):
@@ -145,6 +147,12 @@ func _key(action: String, keycode: Key) -> void:
 func _btn(action: String, button: JoyButton) -> void:
 	var e := InputEventJoypadButton.new()
 	e.device = ANY_DEVICE
+	e.button_index = button
+	InputMap.action_add_event(action, e)
+
+
+func _mouse(action: String, button: MouseButton) -> void:
+	var e := InputEventMouseButton.new()
 	e.button_index = button
 	InputMap.action_add_event(action, e)
 
@@ -177,7 +185,18 @@ func _setup_input() -> void:
 	_add("jump"); _key("jump", KEY_SPACE); _btn("jump", JOY_BUTTON_A)
 	_add("sprint"); _key("sprint", KEY_SHIFT); _btn("sprint", JOY_BUTTON_LEFT_STICK)
 	_add("crouch"); _key("crouch", KEY_C); _key("crouch", KEY_CTRL); _btn("crouch", JOY_BUTTON_B)
-	_add("drone"); _key("drone", KEY_F)
+	_add("drone"); _key("drone", KEY_F9)
+	# Combat : RT tirer, LT viser, X ramasser ou recharger, Y changer d'arme, RB plaque.
+	_add("fire", 0.3); _mouse("fire", MOUSE_BUTTON_LEFT); _axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+	_add("ads", 0.3); _mouse("ads", MOUSE_BUTTON_RIGHT); _axis("ads", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	# Manettes dont les gâchettes sont de simples boutons (Android : L2 / R2 = boutons 15 / 16).
+	_btn("ads", JOY_BUTTON_MISC1); _btn("fire", JOY_BUTTON_PADDLE1)
+	_add("reload"); _key("reload", KEY_R)
+	_add("interact"); _key("interact", KEY_E); _key("interact", KEY_F)
+	_add("use"); _btn("use", JOY_BUTTON_X)
+	_add("swap"); _key("swap", KEY_1); _key("swap", KEY_2); _btn("swap", JOY_BUTTON_Y)
+	_mouse("swap", MOUSE_BUTTON_WHEEL_UP); _mouse("swap", MOUSE_BUTTON_WHEEL_DOWN)
+	_add("plate"); _key("plate", KEY_4); _key("plate", KEY_X); _btn("plate", JOY_BUTTON_RIGHT_SHOULDER)
 	_add("carte"); _key("carte", KEY_M); _key("carte", KEY_TAB); _btn("carte", JOY_BUTTON_BACK)
 	_add("pause"); _key("pause", KEY_ESCAPE); _key("pause", KEY_P); _btn("pause", JOY_BUTTON_START)
 	# Les claviers AZERTY : ZQSD en plus de WASD.

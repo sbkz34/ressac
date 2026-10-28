@@ -61,7 +61,7 @@ jobs:
           ls -la build
           test -s build/ressac.apk
 
-      - name: Check the island and the movement (slide, cancel slide, mantle, parachute, plane)
+      - name: Check the island, the movement and the combat
         run: |
           set -o pipefail
           timeout 300 "$HOME/godot" --headless --fixed-fps 60 --path . -- --check 2>&1 | grep -E "\[ile\]|\[check\]|SCRIPT ERROR" | tee check.log
@@ -75,7 +75,7 @@ jobs:
           tag="build-${{ github.run_number }}"
           gh release create "$tag" build/ressac.apk --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "Ressac — build ${{ github.run_number }}" --latest \
-            --notes "APK Android (arm64). Jalon 1 : mouvement (glissade, cancel slide, sprint tactique, escalade, parachute, saut d'avion) sur l'Île du Lazaret. Téléchargez ressac.apk et installez-le ; les builds suivants s'installent par-dessus (même signature)."
+            --notes "APK Android (arm64). Jalon 2 : armes et combat (10 armes, raretés, plaques d'armure, butin, coffres, champ de tir à la Batterie), après le mouvement du jalon 1. Téléchargez ressac.apk et installez-le ; les builds suivants s'installent par-dessus (même signature)."
 
       - uses: actions/upload-artifact@v4
         if: always()

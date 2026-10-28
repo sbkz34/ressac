@@ -22,6 +22,12 @@ var _tac: ProgressBar
 var _help: Label
 var _fps: Label
 var _map: MapView
+var _cross: Crosshair
+var _vitals: Vitals
+var _prompt: Label
+var _notice: Label
+var _money: Label
+var _notice_t := 0.0
 var _pause: Control
 var _pause_box: VBoxContainer
 var _drone_btn: Button
@@ -52,16 +58,16 @@ func _ready() -> void:
 	_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_state.offset_left = -400
 	_state.offset_right = 400
-	_state.offset_top = -118
-	_state.offset_bottom = -84
+	_state.offset_top = -168
+	_state.offset_bottom = -134
 	_tac = ProgressBar.new()
 	_tac.show_percentage = false
 	_tac.max_value = 1.0
 	_tac.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_tac.offset_left = -70
 	_tac.offset_right = 70
-	_tac.offset_top = -80
-	_tac.offset_bottom = -72
+	_tac.offset_top = -130
+	_tac.offset_bottom = -122
 	_tac.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(0, 0, 0, 0.45)
@@ -70,6 +76,31 @@ func _ready() -> void:
 	_tac.add_theme_stylebox_override("background", bg)
 	_tac.add_theme_stylebox_override("fill", fill)
 	_frame.add_child(_tac)
+	_money = _label(_frame, 18, Color(0.6, 0.95, 0.55))
+	_money.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_money.offset_left = 4
+	_money.offset_top = 26
+	_vitals = Vitals.new()
+	_vitals.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_vitals.offset_left = -300
+	_vitals.offset_right = 300
+	_vitals.offset_top = -112
+	_vitals.offset_bottom = -36
+	_frame.add_child(_vitals)
+	_prompt = _label(_frame, 22, Color(1, 0.92, 0.7))
+	_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prompt.offset_left = -400
+	_prompt.offset_right = 400
+	_prompt.offset_top = 60
+	_prompt.offset_bottom = 92
+	_notice = _label(_frame, 20, Color(1, 1, 1))
+	_notice.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_notice.offset_left = -400
+	_notice.offset_right = 400
+	_notice.offset_top = 100
+	_notice.offset_bottom = 128
 	_help = _label(_frame, 17, Color(1, 1, 1, 0.8))
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_help.offset_top = -30
@@ -82,6 +113,11 @@ func _ready() -> void:
 	touch.map_pressed.connect(toggle_map)
 	touch.pause_pressed.connect(open_pause)
 
+	_cross = Crosshair.new()
+	_cross.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_cross)
+	move_child(_cross, 0)
 	_map = MapView.new()
 	_map.visible = false
 	add_child(_map)
@@ -110,6 +146,12 @@ func attach(p: Joueur) -> void:
 	player.touch = touch
 	_map.player = p
 	player.state_changed.connect(func(_e): _update_help())
+	_cross.arsenal = p.arsenal
+	_vitals.arsenal = p.arsenal
+	p.arsenal.hit.connect(_cross.on_hit)
+	p.arsenal.notice.connect(func(t: String):
+		_notice.text = t
+		_notice_t = 2.0)
 
 
 func set_avion(a: Avion) -> void:
@@ -285,13 +327,17 @@ func _update_help() -> void:
 	if player.is_drone():
 		_help.text = "%s / %s : monter / descendre  ·  %s : rapide  ·  F : quitter le drone" % [key_name("jump"), key_name("crouch"), key_name("sprint")]
 		return
-	_help.text = "%s : sauter / escalader  ·  %s : accroupi, glissade, annuler (maintenir : couché)  ·  %s : sprint (encore : tactique)  ·  %s : carte  ·  %s : pause" % [
-		key_name("jump"), key_name("crouch"), key_name("sprint"), key_name("carte"), key_name("pause")]
+	if G.input_mode == "pad":
+		_help.text = "RT tirer · LT viser · X ramasser / recharger · Y arme · RB plaque · A sauter · B accroupi, glissade · L3 sprint · Select carte"
+	else:
+		_help.text = "Clic tirer · clic droit viser · E ramasser · R recharger · 1/2 arme · 4 plaque · Espace sauter · C accroupi, glissade · Maj sprint · M carte"
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if player == null:
 		return
+	_vitals.visible = player.etat != Joueur.Etat.DRONE
+	_cross.visible = not _map.visible
 	var p := player.global_position
 	_place.text = G.where(p)
 	var heading := fposmod(-rad_to_deg(player.rotation.y), 360.0)
@@ -332,7 +378,23 @@ func _process(_delta: float) -> void:
 			elif player.posture == Joueur.Posture.COUCHE:
 				st = "COUCHÉ"
 	_state.text = st
+	var a := player.arsenal
+	if a.target_item:
+		tl["action"] = "OUVRIR" if a.target_item is Coffre else "PRENDRE"
+		var k: String = {"pad": "X", "touch": "ACTION"}.get(G.input_mode, "E")
+		_prompt.text = "%s : %s" % [k, a.interact_label()]
+	else:
+		_prompt.text = ""
+		var w := a.current()
+		if not w.is_empty() and int(w.chargeur) == 0 and a.can_use_weapon():
+			_prompt.text = "Recharger (%s)" % {"pad": "X", "touch": "RECH."}.get(G.input_mode, "R") if int(a.reserve[Armes.info(w.id).munition]) > 0 else "Plus de munitions"
+	if not a.can_use_weapon():
+		for k in ["tir", "viser", "recharger", "arme", "plaque"]:
+			tl[k] = ""
 	touch.labels = tl
+	_money.text = "%d €" % a.argent
+	_notice_t -= delta
+	_notice.modulate.a = clampf(_notice_t, 0.0, 1.0)
 	# Jauge : se vide pendant le sprint tactique, se remplit pendant la recharge.
 	var on_ground := player.etat == Joueur.Etat.SOL or player.etat == Joueur.Etat.GLISSADE
 	_tac.visible = on_ground and (player.sprinting or player.tac_left > 0.0 or player.tac_cooldown > 0.0)
@@ -392,3 +454,115 @@ class MapView:
 			var s := side / 70.0
 			draw_colored_polygon(PackedVector2Array([pp + dir * s * 1.4, pp - dir * s * 0.8 + perp * s, pp - dir * s * 0.8 - perp * s]), Color(0.2, 0.9, 1.0))
 			draw_polyline(PackedVector2Array([pp + dir * s * 1.4, pp - dir * s * 0.8 + perp * s, pp - dir * s * 0.8 - perp * s, pp + dir * s * 1.4]), Color(0, 0, 0), 2.0)
+
+
+class Crosshair:
+	extends Control
+	## Réticule au centre de l'écran : quatre traits écartés selon la dispersion, un point en
+	## visée, la lunette du fusil de précision, et les marqueurs de touche (blanc : corps,
+	## jaune : tête, bleu : armure, bleu épais : armure brisée, rouge : élimination).
+	var arsenal: Arsenal
+	var _hit_t := 0.0
+	var _hit_kind := ""
+	const COLORS := {"corps": Color(1, 1, 1), "tete": Color(1, 0.85, 0.2), "armure": Color(0.45, 0.7, 1.0),
+		"brise": Color(0.3, 0.6, 1.0), "elimination": Color(1, 0.25, 0.2)}
+
+	func on_hit(kind: String, _amount: float) -> void:
+		_hit_kind = kind
+		_hit_t = 0.22 if kind != "elimination" else 0.45
+
+	func _process(delta: float) -> void:
+		_hit_t = maxf(0.0, _hit_t - delta)
+		queue_redraw()
+
+	func _draw() -> void:
+		if arsenal == null or not arsenal.can_use_weapon():
+			return
+		var c := size / 2
+		if arsenal.view.hidden_by_scope:
+			var r := minf(size.x, size.y) * 0.42
+			var w := maxf(size.x, size.y) * 1.5
+			draw_arc(c, r + w / 2, 0, TAU, 72, Color(0, 0, 0), w)
+			draw_line(c - Vector2(r, 0), c + Vector2(r, 0), Color(0, 0, 0, 0.85), 1.5)
+			draw_line(c - Vector2(0, r), c + Vector2(0, r), Color(0, 0, 0, 0.85), 1.5)
+		elif arsenal.ads < 0.6 and not arsenal.current().is_empty():
+			# Écart des traits : la dispersion vue à l'écran.
+			var cam := arsenal.joueur.cam
+			var px := tan(deg_to_rad(arsenal.spread)) / tan(deg_to_rad(cam.fov / 2.0)) * size.y / 2.0
+			var gap := clampf(px, 4.0, size.y * 0.3)
+			var col := Color(1, 1, 1, 0.85 * (1.0 - arsenal.ads))
+			if arsenal.assist_target:
+				col = Color(1, 0.5, 0.45, col.a)
+			for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				draw_line(c + d * gap, c + d * (gap + 9.0), Color(0, 0, 0, col.a * 0.6), 4.0)
+				draw_line(c + d * gap, c + d * (gap + 9.0), col, 2.0)
+		else:
+			draw_circle(c, 2.0, Color(1, 1, 1, 0.9))
+		if _hit_t > 0.0:
+			var k := COLORS.get(_hit_kind, Color(1, 1, 1)) as Color
+			k.a = clampf(_hit_t * 6.0, 0.0, 1.0)
+			var s := 14.0 if _hit_kind in ["brise", "elimination"] else 10.0
+			var t := 4.0 if _hit_kind in ["brise", "elimination"] else 2.5
+			for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+				draw_line(c + d * 5.0, c + d * s, k, t)
+
+
+class Vitals:
+	extends Control
+	## En bas au centre : plaques dans le sac, armure (3 segments), santé, arme en main et munitions.
+	var arsenal: Arsenal
+
+	func _process(_d: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		if arsenal == null:
+			return
+		var font := ThemeDB.fallback_font
+		var s := arsenal.sante
+		var bw := 230.0
+		var x0 := size.x / 2 - bw / 2 - 70
+		var y := 30.0
+		# Armure : trois segments.
+		var seg := (bw - 8.0) / 3.0
+		for k in 3:
+			var r := Rect2(x0 + k * (seg + 4.0), y, seg, 10)
+			draw_rect(r, Color(0, 0, 0, 0.5))
+			var fill := clampf((s.armor - k * Armes.PLAQUE) / Armes.PLAQUE, 0.0, 1.0)
+			if fill > 0.0:
+				draw_rect(Rect2(r.position, Vector2(r.size.x * fill, r.size.y)), Color(0.35, 0.65, 1.0))
+		# Santé.
+		var hr := Rect2(x0, y + 14, bw, 12)
+		draw_rect(hr, Color(0, 0, 0, 0.5))
+		var hp := s.hp / Sante.HP_MAX
+		draw_rect(Rect2(hr.position, Vector2(bw * hp, 12)), Color(1, 1, 1) if hp > 0.35 else Color(1, 0.35, 0.3))
+		# Plaques dans le sac (et la plaque en cours de pose).
+		var px := x0 - 56
+		draw_rect(Rect2(px, y - 2, 16, 22), Color(0.35, 0.65, 1.0, 0.9))
+		_text(font, Vector2(px + 20, y + 16), "×%d" % arsenal.plates, 18, Color(1, 1, 1))
+		if arsenal.plate_t > 0.0:
+			var pr := Rect2(x0, y - 12, bw * arsenal.plate_t / Arsenal.PLATE_TIME, 5)
+			draw_rect(pr, Color(0.6, 0.85, 1.0))
+		# Arme et munitions.
+		var w := arsenal.current()
+		var ax := x0 + bw + 22
+		if w.is_empty():
+			_text(font, Vector2(ax, y + 14), "Mains nues", 18, Color(1, 1, 1, 0.7))
+			return
+		var a := Armes.info(w.id)
+		var col: Color = Armes.RARETES[int(w.rarete)].couleur
+		_text(font, Vector2(ax, y + 2), String(a.nom), 16, col)
+		var mag := int(w.chargeur)
+		var res := int(arsenal.reserve[a.munition])
+		var mag_col := Color(1, 1, 1) if mag > Armes.taille_chargeur(w.id, int(w.rarete)) / 4 else Color(1, 0.45, 0.35)
+		_text(font, Vector2(ax, y + 30), "%d" % mag, 28, mag_col)
+		_text(font, Vector2(ax + 16 + 16 * str(mag).length(), y + 30), "/ %d" % res, 18, Color(1, 1, 1, 0.75))
+		if arsenal.reloading:
+			_text(font, Vector2(ax, y + 48), "rechargement…", 15, Color(1, 0.9, 0.6))
+		var o := arsenal.other()
+		if not o.is_empty():
+			_text(font, Vector2(ax + 120, y + 48), "↻ %s" % String(Armes.info(o.id).nom), 13, Color(1, 1, 1, 0.55))
+
+	func _text(font: Font, at: Vector2, t: String, fs: int, col: Color) -> void:
+		draw_string_outline(font, at, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 5, Color(0, 0, 0, 0.8))
+		draw_string(font, at, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)

@@ -79,6 +79,9 @@ var head: Node3D
 var cam: Camera3D
 var canopy: Node3D
 var hspeed := 0.0             # vitesse horizontale réelle (affichage, tests)
+var sante: Sante
+var arsenal: Arsenal
+var hitboxes: Array[Area3D] = []
 
 var _local := Intentions.new()
 var _shape: CollisionShape3D
@@ -97,6 +100,7 @@ var _mantle_posture: int = Posture.DEBOUT
 var _mantle_sprint := false
 var _step := 0.0
 var _fall_peak := 0.0
+var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
 
 
 func _ready() -> void:
@@ -122,11 +126,23 @@ func _ready() -> void:
 	head.add_child(cam)
 	cam.current = true
 	_make_canopy()
+	sante = Sante.new()
+	sante.name = "Sante"
+	add_child(sante)
+	hitboxes = Sante.make_hitboxes(self, sante)
+	arsenal = Arsenal.new()
+	arsenal.name = "Arsenal"
+	add_child(arsenal)
+	arsenal.setup(self, hitboxes)
 
 
 func _apply_shape(p: int) -> void:
 	_shape.shape = _shapes[p]
 	_shape.position.y = HEIGHTS[p] / 2.0
+	# Les zones de touche suivent la posture (on est plus petit accroupi ou couché).
+	var k: float = HEIGHTS[p] / HEIGHTS[Posture.DEBOUT]
+	for a in hitboxes:
+		a.position.y = float(a.get_meta("base_y")) * k
 
 
 func spawn_at(p: Vector3, yaw: float) -> void:
@@ -194,6 +210,36 @@ func tac_ready() -> bool:
 	return tac_left <= 0.0 and tac_cooldown <= 0.0
 
 
+func stop_sprint() -> void:
+	sprinting = false
+	_end_tac()
+
+
+## Recul d'une arme : la visée monte (et dérive un peu), en degrés.
+func add_recoil(pitch_deg: float, yaw_deg: float) -> void:
+	_snap += Vector2(yaw_deg, pitch_deg)
+
+
+## Assistance à la visée : tourne la vue d'une fraction de l'écart vers un point.
+func snap_towards(point: Vector3, fraction: float) -> void:
+	var to := point - cam.global_position
+	var yaw_t := atan2(-to.x, -to.z)
+	var pitch_t := atan2(to.y, Vector2(to.x, to.z).length())
+	var dy := rad_to_deg(wrapf(yaw_t - _yaw, -PI, PI))
+	var dp := rad_to_deg(pitch_t - _pitch)
+	_snap += Vector2(dy, dp) * fraction
+
+
+## Tests : regarder exactement un point.
+func look_at_point(point: Vector3) -> void:
+	var to := point - (global_position + Vector3(0, EYES[posture], 0))
+	_yaw = atan2(-to.x, -to.z)
+	_pitch = atan2(to.y, Vector2(to.x, to.z).length())
+	rotation.y = _yaw
+	head.rotation.x = _pitch
+	_snap = Vector2.ZERO
+
+
 # ------------------------------------------------------------------------------------------------
 # Commandes locales (accumulées entre deux pas de physique)
 # ------------------------------------------------------------------------------------------------
@@ -213,9 +259,10 @@ func _process(delta: float) -> void:
 		return
 	var i := _local
 	var stick := Input.get_vector("look_left", "look_right", "look_down", "look_up")
+	var assist := arsenal.look_scale()
 	if stick != Vector2.ZERO:
 		var curved := stick * stick.length()   # précis au centre, rapide en bout de course
-		var s := LOOK_PAD * float(G.settings.sens_pad) * delta
+		var s := LOOK_PAD * float(G.settings.sens_pad) * delta * assist * lerpf(1.0, 0.55, arsenal.ads)
 		i.look += Vector2(-curved.x * s, curved.y * s * 0.75)
 	i.move = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	i.jump = i.jump or Input.is_action_just_pressed("jump")
@@ -224,8 +271,15 @@ func _process(delta: float) -> void:
 	i.jump_held = Input.is_action_pressed("jump")
 	i.crouch_held = Input.is_action_pressed("crouch")
 	i.sprint_held = Input.is_action_pressed("sprint")
+	i.fire_held = Input.is_action_pressed("fire")
+	i.ads_held = Input.is_action_pressed("ads")
+	i.reload = i.reload or Input.is_action_just_pressed("reload")
+	i.swap = i.swap or Input.is_action_just_pressed("swap")
+	i.interact = i.interact or Input.is_action_just_pressed("interact")
+	i.use = i.use or Input.is_action_just_pressed("use")
+	i.plate_held = Input.is_action_pressed("plate")
 	if touch and touch.visible:
-		var d := touch.consume_look() * 0.18 * float(G.settings.sens_touch)
+		var d := touch.consume_look() * 0.18 * float(G.settings.sens_touch) * assist * lerpf(1.0, 0.6, arsenal.ads)
 		i.look += Vector2(-d.x, -d.y)
 		if touch.move.length() > i.move.length():
 			i.move = touch.move
@@ -236,6 +290,12 @@ func _process(delta: float) -> void:
 		i.sprint = i.sprint or touch.take("sprint") or (touch.sprint_edge and not sprinting and etat == Etat.SOL)
 		i.jump_held = i.jump_held or touch.held("saut")
 		i.crouch_held = i.crouch_held or touch.held("accroupi")
+		i.fire_held = i.fire_held or touch.held("tir")
+		i.ads_held = i.ads_held or touch.ads_on
+		i.reload = i.reload or touch.take("recharger")
+		i.swap = i.swap or touch.take("arme")
+		i.interact = i.interact or touch.take("action")
+		i.plate_held = i.plate_held or touch.held("plaque")
 
 
 func _look(d: Vector2) -> void:
@@ -260,6 +320,13 @@ func _physics_process(delta: float) -> void:
 		Etat.DRONE: _sim_drone(i, delta)
 		Etat.GLISSADE: _sim_glissade(i, delta)
 		_: _sim_sol(i, delta)
+	arsenal.simulate(i, delta)
+	if _snap != Vector2.ZERO:
+		var step := _snap * minf(1.0, 25.0 * delta)
+		_look(step)
+		_snap -= step
+		if _snap.length() < 0.01:
+			_snap = Vector2.ZERO
 	i.consume()
 	hspeed = Vector2(velocity.x, velocity.z).length()
 	_update_camera(delta)
@@ -309,7 +376,7 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 		_hold_from_ground = false
 
 	# Sprint : appui = courir ; en courant, appui = sprint tactique.
-	if i.sprint and not swimming:
+	if i.sprint and not swimming and not arsenal.blocks_sprint():
 		if sprinting and tac_ready() and posture == Posture.DEBOUT:
 			tac_left = TAC_DURATION
 		elif not sprinting and (posture == Posture.DEBOUT or _set_posture(Posture.DEBOUT)):
@@ -354,6 +421,8 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 		speed = SPRINT
 	if not sprinting and i.move.y > 0.2:
 		speed *= 0.85    # on recule moins vite
+	if not swimming:
+		speed *= arsenal.move_mult()
 	var wish := _wish_dir(i)
 	var target := wish * speed
 	if on_floor or swimming:
@@ -665,8 +734,11 @@ func _update_camera(delta: float) -> void:
 		eye = 1.45
 	if etat == Etat.SOL and sprinting:
 		fov += 10.0 if tac_left > 0.0 else 4.0
+	var w := arsenal.current()
+	if not w.is_empty() and arsenal.ads > 0.0:
+		fov = lerpf(fov, float(Armes.info(w.id).ads_fov), arsenal.ads)
 	head.position.y = lerpf(head.position.y, eye, minf(1.0, 14.0 * delta))
-	cam.fov = lerpf(cam.fov, fov, minf(1.0, 8.0 * delta))
+	cam.fov = lerpf(cam.fov, fov, minf(1.0, (20.0 if arsenal.ads > 0.0 else 8.0) * delta))
 	_roll = lerpf(_roll, roll, minf(1.0, 10.0 * delta))
 	head.rotation = Vector3(_pitch, 0, deg_to_rad(_roll))
 

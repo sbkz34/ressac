@@ -16,6 +16,11 @@ var env: Environment
 var shops: Array[Node3D] = []
 var lantern: Node3D
 var stats := {"batiments": 0, "rampes": 0}
+## Emplacements de butin par lieu, relevés pendant la construction : {id du lieu: [Vector3]}.
+var loot_spots := {}
+## Emplacements de coffres : {id du lieu: [[position, orientation]]}.
+var chest_spots := {}
+var _lieu_id := ""
 
 var mats := {}
 
@@ -269,7 +274,20 @@ func ramp(parent: Node3D, x: float, z0: float, y0: float, run: float, rise: floa
 # ------------------------------------------------------------------------------------------------
 # Lieux
 # ------------------------------------------------------------------------------------------------
+func _spot(node: Node3D, local: Vector3, chest := false) -> void:
+	var p := node.to_global(local)
+	if chest:
+		if not chest_spots.has(_lieu_id):
+			chest_spots[_lieu_id] = []
+		chest_spots[_lieu_id].append([p, node.global_rotation.y])
+	else:
+		if not loot_spots.has(_lieu_id):
+			loot_spots[_lieu_id] = []
+		loot_spots[_lieu_id].append(p)
+
+
 func _build_lieu(l: Dictionary) -> void:
+	_lieu_id = String(l.id)
 	var root := Node3D.new()
 	root.name = String(l.id).capitalize()
 	add_child(root)
@@ -388,6 +406,15 @@ func _batiment(node: Node3D, b: Dictionary) -> void:
 			wall(node, Vector3(x0, 0, z1), Vector3(x1, 0, z1), [], m, top + 0.25, 0.5)
 			wall(node, Vector3(x0, 0, z0), Vector3(x0, 0, z1), [], m, top + 0.25, 0.5)
 			wall(node, Vector3(x1, 0, z0), Vector3(x1, 0, z1), [], m, top + 0.25, 0.5)
+	# Butin : deux emplacements par étage du côté opposé à l'escalier, un sur le toit, un coffre.
+	var lx := -signf(stair_x) * w / 4
+	for k in floors:
+		var y := 0.05 if k == 0 else k * fh + 0.03
+		_spot(node, Vector3(lx, y, -d / 4))
+		_spot(node, Vector3(lx, y, d / 4))
+	if roof_access:
+		_spot(node, Vector3(lx, top + 0.03, 0))
+	_spot(node, Vector3(lx, 0.05, 0), true)
 	# Volets de couleur à côté des fenêtres des petites maisons (décor).
 	if w <= 12.0 and d <= 12.0:
 		var vm: Material = mats.volet_vert if int(absf(b.x + b.z)) % 2 == 0 else mats.volet_bleu
@@ -455,6 +482,9 @@ func _hangar(node: Node3D, b: Dictionary) -> void:
 			cylinder(node, Vector3(w / 4, 1.1, z), 1.1, 2.2, mats.metal)
 		else:
 			box(node, Vector3(w / 2 - 1.2, 0.6, z), Vector3(1.4, 1.2, 2.4), mats.wood)
+	for z in [-d / 3, 0.0, d / 3]:
+		_spot(node, Vector3(0, 0.02, z))
+	_spot(node, Vector3(-w / 2 + 1.0, 0.0, -d / 4), true)
 
 
 func _bunker(node: Node3D, b: Dictionary) -> void:
@@ -488,6 +518,8 @@ func _bunker(node: Node3D, b: Dictionary) -> void:
 	for sx in [-1.0, 1.0]:
 		var t := box(node, Vector3(sx * (w / 2 + 1.2), 0.6, 0), Vector3(2.2, 1.8, d * 0.8), mats.roche)
 		t.rotation.z = sx * 0.5
+	_spot(node, Vector3(0, 0.02, 0))
+	_spot(node, Vector3(-w / 2 + 1.2, 0.0, 0), true)
 
 
 func _phare(node: Node3D, b: Dictionary) -> void:
@@ -511,6 +543,7 @@ func _phare(node: Node3D, b: Dictionary) -> void:
 	node.add_child(l)
 	l.position = Vector3(0, h + 1.4, 0)
 	lantern = node
+	_spot(node, Vector3(0, 0.02, 4.6))
 
 
 func _mat(node: Node3D, b: Dictionary) -> void:
@@ -527,6 +560,7 @@ func _mat(node: Node3D, b: Dictionary) -> void:
 		box(node, Vector3(0, y, 0), Vector3(0.08, 0.08, s + 0.2), mats.metal, false)
 		y += 3.0
 	box(node, Vector3(0, h + 0.3, 0), Vector3(0.3, 0.6, 0.3), mats.ecran, false)
+	_spot(node, Vector3(2.2, 0.02, 0))
 
 
 func _citerne(node: Node3D) -> void:
@@ -540,6 +574,7 @@ func _citerne(node: Node3D) -> void:
 	# Échelle (décor).
 	for i in 20:
 		box(node, Vector3(3.3, 0.6 * i + 0.4, 3.3), Vector3(0.5, 0.05, 0.05), mats.metal, false)
+	_spot(node, Vector3(0, 0.02, 0))
 
 
 func _cheminee(node: Node3D, b: Dictionary) -> void:
@@ -547,6 +582,7 @@ func _cheminee(node: Node3D, b: Dictionary) -> void:
 	box(node, Vector3(0, 1.0, 0), Vector3(4.0, 2.0, 4.0), mats.brick)
 	cylinder(node, Vector3(0, h / 2, 0), 1.8, h, mats.brick, true, 1.2, 14)
 	cylinder(node, Vector3(0, h + 0.3, 0), 1.45, 0.6, mats.dalle, false, 1.45, 14)
+	_spot(node, Vector3(2.6, 0.02, 0))
 
 
 func _quai(node: Node3D, b: Dictionary, ground_h: float) -> void:
@@ -569,6 +605,7 @@ func _quai(node: Node3D, b: Dictionary, ground_h: float) -> void:
 		cylinder(node, Vector3(w / 2 - 0.5, deck + 0.3, z), 0.2, 0.6, mats.metal, false, -1.0, 6)
 		if i % 2 == 0 and d > 20.0:
 			_barque(node, Vector3(w / 2 + 2.2, y_sea + 0.25, z + 1.5), i)
+	_spot(node, Vector3(0, -0.28, 0))
 
 
 func _barque(node: Node3D, p: Vector3, i: int) -> void:
@@ -604,6 +641,9 @@ func _conteneur(node: Node3D, b: Dictionary) -> void:
 	# Nervures (décor).
 	for i in 7:
 		box(node, Vector3(-2.7 + i * 0.9, 1.3, 1.23), Vector3(0.12, 2.4, 0.06), mats.metal, false)
+	_spot(node, Vector3(0, 0.02, 2.2))
+	if stack == 1:
+		_spot(node, Vector3(0, 2.62, 0))
 
 
 func _mur(node: Node3D, b: Dictionary) -> void:
@@ -611,6 +651,7 @@ func _mur(node: Node3D, b: Dictionary) -> void:
 	var h := float(b.get("h", 1.5))
 	box(node, Vector3(0, (h - 1.0) / 2, 0), Vector3(w, h + 1.0, 0.5), mats.pierre)
 	box(node, Vector3(0, h + 0.05, 0), Vector3(w + 0.1, 0.1, 0.6), mats.dalle, false)
+	_spot(node, Vector3(0, 0.02, 1.2))
 
 
 func _tombes(node: Node3D, b: Dictionary) -> void:
@@ -659,6 +700,7 @@ func _fontaine(node: Node3D) -> void:
 	cylinder(node, Vector3(0, 0.35, 0), 2.0, 0.7, mats.pierre, true, 2.0, 16)
 	cylinder(node, Vector3(0, 0.66, 0), 1.75, 0.05, mats.eau_bassin, false, 1.75, 16)
 	cylinder(node, Vector3(0, 1.2, 0), 0.3, 1.6, mats.pierre, true, 0.22, 8)
+	_spot(node, Vector3(2.8, 0.02, 0))
 
 
 func _emplacement(node: Node3D) -> void:
@@ -677,6 +719,9 @@ func _emplacement(node: Node3D) -> void:
 # ------------------------------------------------------------------------------------------------
 # Stations d'achat (le magasin du mode Résurgence ; l'achat viendra au jalon 2)
 # ------------------------------------------------------------------------------------------------
+	_spot(node, Vector3(1.8, 0.02, 1.8))
+
+
 func _shop(p: Vector3) -> void:
 	var node := Node3D.new()
 	node.name = "StationAchat"

@@ -18,7 +18,7 @@ Quadrillage de **cases de 64 m**, colonnes A–J d'ouest en est, lignes 1–10 d
 | **Le Port** | F7 | 2,5 m | Fond de l'anse sud : trois pontons, capitainerie à toit-terrasse, hangars à bateaux, barques. Station d'achat. | ★★ |
 | **Les Cabanons** | C7 | 6 m | Village de pêcheurs serré autour d'une fontaine : 13 maisons, toits en tuiles ou terrasses accessibles, ruelles. Station d'achat. | ★★ |
 | **Le Sémaphore** | H3 | 38 m | Sommet de l'île : station radio, antenne visible de partout. Domine l'est. Station d'achat. | ★★ |
-| **La Batterie** | C4 | 27 m | Fortifications sur la falaise nord-ouest : trois bunkers, deux cuves de canon, murets, tour d'observation. | ★★ |
+| **La Batterie** | C4 | 27 m | Fortifications sur la falaise nord-ouest : trois bunkers, deux cuves de canon, murets, tour d'observation. Au sud, le **champ de tir** (mannequins à 10, 25, 50 et 70 m, toutes les armes, ravitaillement). | ★★ |
 | **La Citerne** | G5 | 18 m | Château d'eau et station de pompage, carrefour entre Lazaret, Sémaphore et Conserverie. | ★ |
 | **Le Cimetière marin** | D6 | 11 m | Enclos muré avec chapelle, rangées de tombes : couverture basse entre le Lazaret et les Cabanons. | ★ |
 | **Les Salins** | H7 | 1,4 m | Bassins de sel plats et découverts, cabane, tas de sel. Traversée exposée. | ★ |
@@ -48,6 +48,8 @@ Tout part de `data/ile.json` :
   (coordonnées relatives au lieu, `r` = rotation en degrés). Types : `bat` (étages `n`, portes,
   `toit` accessible), `hangar`, `bunker`, `phare`, `mat`, `citerne`, `cheminee`, `quai`, `grue`,
   `conteneur`, `mur`, `tombes`, `bassins`, `tas`, `fontaine`, `emplacement`.
+- `butin` (dans chaque lieu) : 1 à 3 étoiles, la quantité et la rareté du butin.
+- `champ_de_tir`, `zones_degagees` : le champ de tir et le terrain aplani, sans arbres, autour.
 - `boutiques` : stations d'achat. `depart` : où commence la visite.
 
 Puis :

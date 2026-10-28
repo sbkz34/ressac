@@ -12,6 +12,13 @@ var crouch := false
 var crouch_held := false
 var sprint := false
 var sprint_held := false
+var fire_held := false
+var ads_held := false
+var reload := false
+var swap := false
+var interact := false
+var use := false              # manette : ramasser s'il y a quelque chose, sinon recharger
+var plate_held := false
 
 
 ## Les appuis ne valent que pour un pas ; ce qui est maintenu reste.
@@ -19,4 +26,8 @@ func consume() -> void:
 	jump = false
 	crouch = false
 	sprint = false
+	reload = false
+	swap = false
+	interact = false
+	use = false
 	look = Vector2.ZERO

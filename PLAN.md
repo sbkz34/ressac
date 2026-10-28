@@ -41,7 +41,7 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
 | `tools/gen_assets.py`, `assets/tex`, `assets/sfx` | Repris tels quels (déjà dans le dépôt). Sable ajouté par `tools/gen_island.py`. |
 | Construction des niveaux en code (`level.gd` : `box`, `wall`, `merge_static`) | Repris et étendus dans `scripts/ile.gd` (étages, rampes, toits, hangars, bunkers…). |
 | Commandes manette / clavier / tactile (`game.gd`, `touch_controls.gd`) | Base reprise ; boutons propres au BR à ajouter (glissade, parachute, ping, carte). |
-| Vues d'armes (`weapon_view.gd`, `gun_shapes.gd`), tirs | À porter au jalon 2 : on garde le ressenti des armes et l'ADS. Le joueur, lui, a été réécrit au jalon 1 (`joueur.gd`). |
+| Vues d'armes (`weapon_view.gd`, `gun_shapes.gd`), sons des armes | Repris au jalon 2 (sans couteau, boissons ni armes doubles), statistiques refaites pour le PvP dans `armes.gd`. Le joueur a été réécrit au jalon 1 (`joueur.gd`). |
 | Bots de test (`--bot --god`), tests automatiques en CI | Même principe : `--check` existe déjà, on ajoutera des tests par jalon. |
 | CI GitHub Actions → APK publié en release | En place (`.github/workflows/build.yml`). |
 | Rendu Compatibility pour GPU Mali | Gardé : l'APK doit tourner sur le Poco X8 Pro à 60 i/s. |
@@ -52,7 +52,7 @@ Durée visée : **12 à 15 minutes**, 24 à 32 combattants (joueur + bots).
 |---|---|---|---|
 | **0** | **Carte** ✅ | Île du Lazaret générée (relief, 10 lieux, bâtiments à étages, végétation), carte tactique, visite à pied et en drone, tests automatiques, APK. | L'APK installé permet de visiter l'île à la manette et au tactile. |
 | **1** | **Mouvement** ✅ | Contrôleur du joueur : sprint, sprint tactique, glissade + **cancel slide**, saut de glissade, escalade de rebords, accroupi / couché, **parachute** (ouvrir, couper, rouvrir, ouverture auto) et saut d'avion, redéploiement depuis un point haut. Menu pause : taille de l'interface, marges, zone sûre, sensibilités. | Tests auto : glissade + annulation garde la vitesse et recharge le sprint tactique ; escalade d'un conteneur ; saut d'avion → atterrissage sur l'île. |
-| 2 | Armes et combat | Portage des armes de Dernière Vague (adaptées au PvP), plaques d'armure, dégâts par zone, munitions au sol, coffres. | Duel contre une cible mobile, armure qui se casse, butin qui se ramasse. |
+| **2** | **Armes et combat** ✅ | 10 armes de Dernière Vague adaptées au PvP (dégâts par zone et selon la distance, raretés), santé + 3 plaques, régénération, visée et assistance, butin dans les bâtiments, coffres, champ de tir avec mannequins. | Tests auto : 9 balles de Faucon à 10 m, une balle d'Aiguille dans la tête à 70 m, plaques, ramassage, coffre. |
 | 3 | Règles Résurgence | La Brume en 6 phases, réapparition en parachute, argent, **stations d'achat**, **loadouts au lobby** et largages de classe. | Une partie complète jouable seul (sans bots) du saut à la fin de la Brume. |
 | 4 | Bots | IA : choisir un lieu, piller, se déplacer avec la zone, combattre (portée, couverture), acheter en station. Niveaux de difficulté. | Partie de 24 combattants qui se termine sans blocage en test automatique. |
 | 5 | Mobile | Interface tactile complète, réglages, performances (objectif 60 i/s, < 300 appels de dessin), sons, menus, progression. | Partie fluide sur le Poco X8 Pro, manette GameSir et tactile. |
@@ -74,7 +74,22 @@ essai sur le téléphone.
 | Parachute | descente 6 m/s (pousser : plus vite), ouverture auto à 40 m (12 m si on l'a coupé) |
 | Avion | 190 m d'altitude, 48 m/s, trajet tiré au sort, éjection en bout d'île |
 
-## 6. Choix techniques
+## 6. Combat (jalon 2)
+
+Toutes les valeurs sont dans `scripts/armes.gd` (armes, munitions, raretés) et
+`scripts/sante.gd` (santé, régénération).
+
+| | Valeur |
+|---|---|
+| Santé | 100, régénération après 4,5 s sans dégâts (35 par seconde) |
+| Armure | 3 plaques de 50 ; une plaque répare un segment (1,1 s), 5 dans le sac au maximum |
+| Zones | tête ×1,3 à ×2,6 selon l'arme, torse ×1, jambes ×0,8 |
+| Distance | dégâts pleins jusqu'au début de la portée, puis baisse jusqu'au facteur de chute |
+| Raretés | rare / épique / légendaire : chargeur ×1,2 / ×1,35 / ×1,5, dispersion et visée améliorées |
+| Butin | 1 à 3 étoiles par lieu : 50 à 80 % des emplacements remplis, 1 à 3 coffres |
+| Départ | pistolet P9, 45 balles, une plaque sur soi, deux dans le sac |
+
+## 7. Choix techniques
 
 - **Godot 4.6**, rendu *Compatibility* (GL ES 3), Android arm64 — comme Dernière Vague.
 - **L'île vient de données** : `data/ile.json` décrit les masses de terre, collines, routes, lieux,
@@ -86,7 +101,7 @@ essai sur le téléphone.
   la simulation du joueur (`joueur.gd`) lit une structure `Intentions` (`intentions.gd`) : manette,
   clavier, tactile, bots de test et, plus tard, joueurs distants passent par le même chemin.
 
-## 7. Questions ouvertes
+## 8. Questions ouvertes
 
 - Taille des équipes au lancement : solo seulement, ou duo/trio avec des bots coéquipiers ?
 - Nombre de combattants par partie (24 ? 32 ?) — à confirmer avec les performances.
