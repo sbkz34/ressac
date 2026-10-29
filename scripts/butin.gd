@@ -71,6 +71,21 @@ func _flat(c: Color, unshaded := false) -> StandardMaterial3D:
 	return m
 
 
+static var _gun_mats := {}
+
+
+## Matière des armes au sol : métal sombre teinté par la rareté.
+static func _gun_mat(rarete: int) -> StandardMaterial3D:
+	if not _gun_mats.has(rarete):
+		var m := StandardMaterial3D.new()
+		var c: Color = Armes.RARETES[rarete].couleur
+		m.albedo_color = Color(0.16, 0.16, 0.17).lerp(c, 0.28)
+		m.metallic = 0.4
+		m.roughness = 0.5
+		_gun_mats[rarete] = m
+	return _gun_mats[rarete]
+
+
 func _box(parent: Node3D, size: Vector3, pos: Vector3, m: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
@@ -90,7 +105,11 @@ func _ready() -> void:
 	var c := color()
 	match type:
 		Type.ARME:
-			var model := GunShapes.build_model(arme.id, Armes.materiaux(int(arme.rarete)), 1.0)
+			# Un seul maillage par modèle d'arme (partagé, comme les armes des bots) : un appel de
+			# dessin par arme au sol au lieu d'un par pièce.
+			var model := MeshInstance3D.new()
+			model.mesh = BotCorps.gun_mesh(arme.id)
+			model.material_override = _gun_mat(int(arme.rarete))
 			_spin.add_child(model)
 			model.rotation.y = PI / 2
 			model.position = Vector3(-0.3, 0, 0)
@@ -109,6 +128,7 @@ func _ready() -> void:
 			beam.material_override = _flat(bc, true)
 			beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			beam.visibility_range_begin = 3.5   # visible de loin, effacé quand on est dessus
+			beam.visibility_range_end = 110.0
 			add_child(beam)
 			beam.position.y = 1.1
 		Type.MUNITIONS:
@@ -134,6 +154,13 @@ func _ready() -> void:
 	l.no_depth_test = false
 	add_child(l)
 	l.position.y = 0.95 if type == Type.ARME else 0.6
+	# Économie pour les téléphones : l'objet lui-même ne se dessine que de près (son faisceau,
+	# lui, reste visible de loin).
+	for g in _spin.find_children("*", "GeometryInstance3D", true, false):
+		var gi := g as GeometryInstance3D
+		gi.visibility_range_end = 38.0
+		gi.visibility_range_end_margin = 4.0
+		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _process(delta: float) -> void:

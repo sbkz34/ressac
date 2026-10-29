@@ -73,6 +73,8 @@ func _ready() -> void:
 	_lobby_cam.fov = 60.0
 	add_child(_lobby_cam)
 	Loadouts.load_all()
+	G.settings_changed.connect(_apply_quality)
+	_apply_quality()
 	# La physique doit avoir enregistré les formes avant de lancer des rayons.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -81,7 +83,11 @@ func _ready() -> void:
 	print("[butin] %d objets, %d coffres, %d mannequins" % [pillage.items.size(), pillage.chests.size(), pillage.targets.size()])
 	player.arsenal.starting_kit()
 	start_visit()
-	if G.sim_mode:
+	if G.icons_dir != "":
+		_icones(G.icons_dir)
+	elif G.perf_mode:
+		_perf()
+	elif G.sim_mode:
 		_sim()
 	elif G.check_mode:
 		_set_mode("entrainement")
@@ -91,6 +97,21 @@ func _ready() -> void:
 		_tour()
 	else:
 		show_lobby()
+
+
+const QUALITES := ["Performance", "Équilibrée", "Qualité"]
+
+
+## Qualité graphique : résolution du rendu 3D (l'interface reste nette) et ombres du soleil.
+func _apply_quality() -> void:
+	var q := clampi(int(G.settings.qualite), 0, 2)
+	var vp := get_viewport()
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = [0.6, 0.75, 1.0][q]
+	var sun := ile.sun
+	sun.shadow_enabled = q > 0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == 2 else DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_max_distance = 70.0 if q == 2 else 45.0
 
 
 func _set_mode(m: String) -> void:
@@ -1089,6 +1110,164 @@ func _sim() -> void:
 		print("[sim] t=%d s phase %d · en jeu %d · %s · armes %s · %d ms réels · %s" % [sec, partie.brume.phase, partie.remaining(), states, guns, Time.get_ticks_msec() - t0, " ".join(feed)])
 		feed.clear()
 	print("[sim] fin : %s, %d ms" % [partie.stats if partie else {}, Time.get_ticks_msec() - t0])
+	get_tree().quit()
+
+
+## --perf : appels de dessin, objets, triangles et temps de calcul à quelques points de vue,
+## pendant une partie à 16.
+func _perf() -> void:
+	await start_partie(15, 1)
+	partie.brume.time_scale = 0.0
+	await _until(func(): return bots.all(func(b): return b.etat == Joueur.Etat.SOL), 60.0)
+	player.scripted = Intentions.new()
+	var lz: Dictionary = G.data.lieux.filter(func(l): return l.id == "lazaret")[0]
+	var views := [
+		["lazaret_cour", Vector3(float(lz.x) + 8, float(lz.h) + 0.1, float(lz.z) + 6), Vector3(float(lz.x), float(lz.h) + 1.5, float(lz.z) - 30)],
+		["lazaret_vers_ile", Vector3(float(lz.x), float(lz.h) + 0.1, float(lz.z) + 30), Vector3(150, 10, 100)],
+		["port", Vector3(30, 3.5, 140), Vector3(80, 3, 80)],
+		["cabanons", Vector3(-120, 7, 95), Vector3(-160, 6, 80)],
+		["salins_vers_ile", Vector3(160, 2, 120), Vector3(-100, 10, -60)],
+		["semaphore_haut", Vector3(150, 47, -130), Vector3(0, 5, 50)],
+	]
+	var mi_count := [0]
+	var count := func(n: Node, f: Callable) -> void:
+		if n is MeshInstance3D or n is MultiMeshInstance3D:
+			mi_count[0] += 1
+		for c in n.get_children():
+			f.call(c, f)
+	count.call(self, count)
+	print("[perf] %d MeshInstance3D / MultiMeshInstance3D dans la scène" % mi_count[0])
+	var by := {}
+	for n in find_children("*", "GeometryInstance3D", true, false):
+		var top: Node = n
+		while top.get_parent() != self and top.get_parent() != null:
+			top = top.get_parent()
+		var key: String = String(top.name).rstrip("0123456789_@")
+		if top == ile:
+			key = "Ile/" + String(n.get_parent().name).rstrip("0123456789_@").left(14)
+		var tri := 0
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh:
+			var m := (n as MeshInstance3D).mesh
+			for si in m.get_surface_count():
+				var arr := m.surface_get_arrays(si)
+				tri += (arr[Mesh.ARRAY_INDEX].size() if arr[Mesh.ARRAY_INDEX] else arr[Mesh.ARRAY_VERTEX].size()) / 3
+		elif n is MultiMeshInstance3D:
+			var mm := (n as MultiMeshInstance3D).multimesh
+			var arr2 := mm.mesh.surface_get_arrays(0)
+			tri = (arr2[Mesh.ARRAY_INDEX].size() if arr2[Mesh.ARRAY_INDEX] else arr2[Mesh.ARRAY_VERTEX].size()) / 3 * mm.instance_count
+		var e: Array = by.get(key, [0, 0])
+		by[key] = [e[0] + 1, e[1] + tri]
+	for k in by:
+		print("[perf]   %-22s %5d objets %8d triangles" % [k, by[k][0], by[k][1]])
+	for v in views:
+		player.spawn_at(v[1], 0.0)
+		player.look_at_point(v[2])
+		for k in 20:
+			await get_tree().process_frame
+		var dc := 0
+		var ob := 0
+		var pr := 0
+		var cpu := 0.0
+		var phys := 0.0
+		for k in 10:
+			await get_tree().process_frame
+			dc += RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+			ob += RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)
+			pr += RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
+			cpu += Performance.get_monitor(Performance.TIME_PROCESS)
+			phys += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+		print("[perf] %-18s %5d appels  %5d objets  %7d k triangles  process %.1f ms  physique %.1f ms" % [v[0], dc / 10, ob / 10, pr / 10000, cpu * 100.0, phys * 100.0])
+		if OS.get_cmdline_user_args().has("--detail") and (v[0] == "lazaret_cour" or v[0] == "salins_vers_ile"):
+			var groups := {"butin": [pillage], "bots": bots, "ombres": [ile.sun]}
+			var veg := []
+			var bat := []
+			for c in ile.get_children():
+				if c is MultiMeshInstance3D:
+					veg.append(c)
+				elif c is MeshInstance3D:
+					bat.append(c)
+			groups["vegetation"] = veg
+			groups["batiments"] = bat
+			groups["terrain"] = [ile.terrain]
+			for gname in groups:
+				for nd in groups[gname]:
+					if nd is DirectionalLight3D:
+						nd.shadow_enabled = false
+					else:
+						nd.visible = false
+				for k in 6:
+					await get_tree().process_frame
+				var dc2 := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+				var ob2 := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)
+				print("[perf]     sans %-11s -%4d appels  -%4d objets" % [gname, dc / 10 - dc2, ob / 10 - ob2])
+				for nd in groups[gname]:
+					if nd is DirectionalLight3D:
+						nd.shadow_enabled = int(G.settings.qualite) > 0
+					else:
+						nd.visible = true
+	get_tree().quit()
+
+
+## --icones=DIR : chaque arme vue de profil (vrai modèle du jeu), fond transparent, en PNG.
+func _icones(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	var vp := SubViewport.new()
+	vp.size = Vector2i(720, 270)
+	vp.transparent_bg = true
+	vp.own_world_3d = true
+	vp.msaa_3d = Viewport.MSAA_4X
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_CLEAR_COLOR
+	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.environment.ambient_light_color = Color(0.75, 0.78, 0.85)
+	env.environment.ambient_light_energy = 0.7
+	vp.add_child(env)
+	var key := DirectionalLight3D.new()
+	key.light_energy = 1.6
+	vp.add_child(key)
+	key.look_at_from_position(Vector3(4, 5, 2.5), Vector3.ZERO)
+	var rim := DirectionalLight3D.new()
+	rim.light_energy = 1.1
+	rim.light_color = Color(0.85, 0.92, 1.0)
+	vp.add_child(rim)
+	rim.look_at_from_position(Vector3(-3, 3, -4), Vector3.ZERO)
+	# Matières plus claires que dans le jeu : on lit les volumes sur un fond de menu sombre.
+	var mk := func(c: Color, metal: float, rough: float) -> StandardMaterial3D:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = c
+		m.metallic = metal
+		m.roughness = rough
+		return m
+	var wood: StandardMaterial3D = (Armes.materiaux(0).wood as StandardMaterial3D).duplicate()
+	wood.albedo_color = Color(1.0, 0.82, 0.68)
+	var mats := {"metal": mk.call(Color(0.46, 0.48, 0.52), 0.55, 0.38), "dark": mk.call(Color(0.2, 0.21, 0.23), 0.3, 0.55),
+		"wood": wood, "glow": mk.call(Color(1.0, 0.8, 0.35), 0.0, 0.5)}
+	var cam := Camera3D.new()
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	vp.add_child(cam)
+	cam.current = true
+	for id in Armes.ARMES:
+		var model := GunShapes.build_model(id, mats, 1.0)
+		vp.add_child(model)
+		var box := AABB()
+		var first := true
+		for mi in model.find_children("*", "MeshInstance3D", true, false):
+			var b: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+			box = b if first else box.merge(b)
+			first = false
+		var c := box.get_center()
+		# Trois quarts, un peu au-dessus : on voit le dessus et le flanc.
+		cam.size = maxf(box.size.z * 1.12 * 270.0 / 720.0, box.size.y * 1.35)
+		cam.global_position = c + Vector3(5, 1.6, -1.1)
+		cam.look_at(c, Vector3.UP)
+		for k in 4:
+			await RenderingServer.frame_post_draw
+		vp.get_texture().get_image().save_png("%s/%s.png" % [dir, id])
+		print("[icones] ", id)
+		model.queue_free()
 	get_tree().quit()
 
 

@@ -105,7 +105,7 @@ func build() -> void:
 	for s in data.boutiques:
 		_shop(Vector3(s.x, 0, s.z))
 	_vegetation()
-	merge_static(24.0)
+	merge_static(64.0)
 
 
 func _environment() -> void:
@@ -757,17 +757,37 @@ func _shop(p: Vector3) -> void:
 # ------------------------------------------------------------------------------------------------
 # Végétation : pins parasols, buissons, rochers (data/vegetation.json)
 # ------------------------------------------------------------------------------------------------
-func _multimesh(mesh: Mesh, m: Material, xforms: Array) -> void:
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = mesh
-	mm.instance_count = xforms.size()
-	for i in xforms.size():
-		mm.set_instance_transform(i, xforms[i])
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = m
-	add_child(mmi)
+## Végétation par carrés de 128 m : seuls les carrés à l'écran sont dessinés, et les petites
+## plantes disparaissent au loin (`range_end`, 0 : toujours visibles).
+const VEG_CELL := 128.0
+
+
+func _multimesh(mesh: Mesh, m: Material, xforms: Array, range_end := 0.0, shadows := true) -> void:
+	var cells := {}
+	for xf in xforms:
+		var o: Vector3 = (xf as Transform3D).origin
+		var key := Vector2i(floori(o.x / VEG_CELL), floori(o.z / VEG_CELL))
+		if not cells.has(key):
+			cells[key] = []
+		cells[key].append(xf)
+	for key in cells:
+		var list: Array = cells[key]
+		var center := Vector3((key.x + 0.5) * VEG_CELL, 0, (key.y + 0.5) * VEG_CELL)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = list.size()
+		for i in list.size():
+			mm.set_instance_transform(i, (list[i] as Transform3D).translated(-center))
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = m
+		mmi.visibility_range_end = range_end
+		mmi.visibility_range_end_margin = 10.0 if range_end > 0.0 else 0.0
+		if not shadows:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mmi)
+		mmi.position = center
 
 
 func _vegetation() -> void:
@@ -814,8 +834,7 @@ func _vegetation() -> void:
 	crown_mesh.height = 2.0
 	crown_mesh.radial_segments = 10
 	crown_mesh.rings = 5
-	_multimesh(crown_mesh, mats.pin, crowns)
-	_multimesh(crown_mesh, mats.pin, crowns2)
+	_multimesh(crown_mesh, mats.pin, crowns + crowns2)
 
 	var bushes := []
 	for t in veg.get("buissons", []):
@@ -828,7 +847,7 @@ func _vegetation() -> void:
 	bush_mesh.height = 2.0
 	bush_mesh.radial_segments = 7
 	bush_mesh.rings = 4
-	_multimesh(bush_mesh, mats.buisson, bushes)
+	_multimesh(bush_mesh, mats.buisson, bushes, 170.0, false)
 
 	var rocks := []
 	var rock_body := StaticBody3D.new()
@@ -856,7 +875,7 @@ func _vegetation() -> void:
 	rock_mesh.height = 2.0
 	rock_mesh.radial_segments = 6
 	rock_mesh.rings = 3
-	_multimesh(rock_mesh, mats.roche, rocks)
+	_multimesh(rock_mesh, mats.roche, rocks, 240.0, false)
 
 
 # ------------------------------------------------------------------------------------------------

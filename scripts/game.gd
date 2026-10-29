@@ -13,6 +13,8 @@ var input_mode := "kbm"   # "kbm", "pad" ou "touch"
 var tour_mode := false
 var check_mode := false
 var bake_nav := false
+var icons_dir := ""             # --icones=DIR : rendus des armes (profil, fond transparent)
+var perf_mode := false         # --perf : mesures de rendu à quelques points de vue (avec écran)
 var sim_mode := false          # --sim : partie accélérée de bots sans écran (réglages, mesures)
 var screenshot_dir := ""
 var data: Dictionary = {}
@@ -27,6 +29,7 @@ var settings := {
 	"show_fps": true,
 	"bots": 15,             # adversaires dans une partie (0 à 23)
 	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
+	"qualite": 1,           # 0 performance, 1 équilibrée, 2 qualité (résolution 3D, ombres)
 	"touches": {},          # touches changées : "pad:action" / "clavier:action" -> touche
 }
 const SETTINGS_PATH := "user://settings.cfg"
@@ -50,6 +53,10 @@ func _ready() -> void:
 			check_mode = true
 		elif a == "--bake-nav":
 			bake_nav = true
+		elif a.begins_with("--icones="):
+			icons_dir = a.substr(9)
+		elif a == "--perf":
+			perf_mode = true
 		elif a == "--sim":
 			sim_mode = true
 			check_mode = true

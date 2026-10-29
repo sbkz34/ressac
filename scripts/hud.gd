@@ -430,6 +430,11 @@ func _build_pause() -> void:
 	fps.add_theme_font_size_override("font_size", 20)
 	fps.toggled.connect(func(on: bool): G.set_setting("show_fps", on))
 	_pause_box.add_child(fps)
+	var q_btn: Button = _button("", func(): pass)
+	q_btn.text = _quality_text()
+	q_btn.pressed.connect(func():
+		G.set_setting("qualite", (int(G.settings.qualite) + 1) % 3)
+		q_btn.text = _quality_text())
 	_button("Touches (manette, clavier)", open_binds)
 	_lobby_btn = _button("Retour au lobby", func(): close_pause(); request_lobby.emit())
 	_button("Quitter le jeu", func(): get_tree().quit())
@@ -480,6 +485,10 @@ func _build_binds() -> void:
 		b.custom_minimum_size = Vector2(360, 50)
 		b.pressed.connect(pair[1])
 		row.add_child(b)
+
+
+func _quality_text() -> String:
+	return "Qualité graphique : %s" % ["Performance (60 %, sans ombres)", "Équilibrée (75 %)", "Qualité (100 %)"][clampi(int(G.settings.qualite), 0, 2)]
 
 
 func open_binds() -> void:

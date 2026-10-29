@@ -75,6 +75,13 @@ static func _make(posture: int, tenue: int) -> ArrayMesh:
 	return st.commit()
 
 
+## Maillage fusionné d'un modèle d'arme, partagé (bots, armes au sol).
+static func gun_mesh(id: String) -> ArrayMesh:
+	if not _guns.has(id):
+		_guns[id] = _make_gun(id)
+	return _guns[id]
+
+
 static func _make_gun(id: String) -> ArrayMesh:
 	# Le modèle de l'arme (silhouette de Dernière Vague) fusionné en un seul maillage.
 	var model := GunShapes.build_model(id, Armes.materiaux(0), 1.0)

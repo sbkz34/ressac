@@ -81,34 +81,101 @@ func _make_material() -> void:
 	material.set_shader_parameter("world_size", half * 2.0)
 
 
+## Niveaux de détail. De près, chaque morceau (64 m) en pleine précision, puis un sommet sur
+## deux ; au loin, des tuiles de 2 × 2 morceaux avec un sommet sur quatre, qui remplacent leurs
+## morceaux (un seul appel de dessin au lieu de quatre, et quatre fois moins de triangles).
+## Les niveaux grossiers ont une jupe (un rebord qui descend) pour cacher les raccords.
+const NEAR := 140.0
+const FAR := 300.0
+const TILE := 2             # morceaux par côté de tuile lointaine
+
+
+func _piece(cx: int, cz: int, w: int, d: int, step: int, begin: float, end: float) -> MeshInstance3D:
+	var center := Vector3(-half + (cx + w / 2.0) * cell, 0, -half + (cz + d / 2.0) * cell)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _chunk_mesh(cx, cz, w, d, step, center)
+	mi.material_override = material
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visibility_range_begin = begin
+	mi.visibility_range_end = end
+	mi.visibility_range_begin_margin = 8.0 if begin > 0.0 else 0.0
+	mi.visibility_range_end_margin = 8.0 if end > 0.0 else 0.0
+	add_child(mi)
+	mi.position = center
+	return mi
+
+
 func _make_chunks() -> void:
 	var cells := n - 1
-	for cz in range(0, cells, CHUNK):
-		for cx in range(0, cells, CHUNK):
-			var st := SurfaceTool.new()
-			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			var w := mini(CHUNK, cells - cx)
-			var d := mini(CHUNK, cells - cz)
-			for iz in range(cz, cz + d + 1):
-				for ix in range(cx, cx + w + 1):
-					st.set_normal(normal_at(ix, iz))
-					st.set_uv(Vector2(float(ix) / cells, float(iz) / cells))
-					st.add_vertex(Vector3(-half + ix * cell, raw(ix, iz), -half + iz * cell))
-			var row := w + 1
-			for j in d:
-				for i in w:
-					var a := j * row + i
-					st.add_index(a)
-					st.add_index(a + 1)
-					st.add_index(a + row)
-					st.add_index(a + 1)
-					st.add_index(a + row + 1)
-					st.add_index(a + row)
-			var mi := MeshInstance3D.new()
-			mi.mesh = st.commit()
-			mi.material_override = material
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mi)
+	var span := CHUNK * TILE
+	for tz in range(0, cells, span):
+		for tx in range(0, cells, span):
+			# La tuile lointaine ; ses morceaux ne s'affichent que tant qu'elle est cachée.
+			var tile := _piece(tx, tz, mini(span, cells - tx), mini(span, cells - tz), 4, FAR, 0.0)
+			for cz in range(tz, mini(tz + span, cells), CHUNK):
+				for cx in range(tx, mini(tx + span, cells), CHUNK):
+					var w := mini(CHUNK, cells - cx)
+					var d := mini(CHUNK, cells - cz)
+					for lod in [[1, 0.0, NEAR], [2, NEAR, 0.0]]:
+						var mi := _piece(cx, cz, w, d, int(lod[0]), float(lod[1]), float(lod[2]))
+						mi.visibility_parent = mi.get_path_to(tile)
+
+
+func _chunk_mesh(cx: int, cz: int, w: int, d: int, step: int, center: Vector3) -> ArrayMesh:
+	var cells := n - 1
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var xs := []
+	var zs := []
+	for ix in range(cx, cx + w + 1, step):
+		xs.append(ix)
+	if xs[-1] != cx + w:
+		xs.append(cx + w)
+	for iz in range(cz, cz + d + 1, step):
+		zs.append(iz)
+	if zs[-1] != cz + d:
+		zs.append(cz + d)
+	var vert := func(ix: int, iz: int, drop: float) -> void:
+		st.set_normal(normal_at(ix, iz))
+		st.set_uv(Vector2(float(ix) / cells, float(iz) / cells))
+		st.add_vertex(Vector3(-half + ix * cell, raw(ix, iz) - drop, -half + iz * cell) - center)
+	for iz in zs:
+		for ix in xs:
+			vert.call(ix, iz, 0.0)
+	var row := xs.size()
+	for j in zs.size() - 1:
+		for i in xs.size() - 1:
+			var a := j * row + i
+			st.add_index(a)
+			st.add_index(a + 1)
+			st.add_index(a + row)
+			st.add_index(a + 1)
+			st.add_index(a + row + 1)
+			st.add_index(a + row)
+	if step > 1:
+		# Jupe : les bords redescendent de 3 m (cache les fentes avec le morceau voisin).
+		var base := xs.size() * zs.size()
+		var edges := [[], [], [], []]
+		for ix in xs:
+			edges[0].append([ix, zs[0]])
+			edges[1].append([ix, zs[-1]])
+		for iz in zs:
+			edges[2].append([xs[0], iz])
+			edges[3].append([xs[-1], iz])
+		var k := base
+		for e in edges:
+			for p in e:
+				vert.call(int(p[0]), int(p[1]), 0.0)
+				vert.call(int(p[0]), int(p[1]), 3.0)
+			for q in e.size() - 1:
+				var t0: int = k + q * 2
+				st.add_index(t0); st.add_index(t0 + 2); st.add_index(t0 + 1)
+				st.add_index(t0 + 2); st.add_index(t0 + 3); st.add_index(t0 + 1)
+				# Les deux faces (le sens dépend du bord).
+				st.add_index(t0); st.add_index(t0 + 1); st.add_index(t0 + 2)
+				st.add_index(t0 + 2); st.add_index(t0 + 1); st.add_index(t0 + 3)
+			k += e.size() * 2
+	return st.commit()
 
 
 func _make_collision() -> void:

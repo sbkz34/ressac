@@ -36,6 +36,8 @@ func _box(parent: Node3D, size: Vector3, pos: Vector3, m: Material) -> MeshInsta
 	bm.size = size
 	mi.mesh = bm
 	mi.material_override = m
+	mi.visibility_range_end = 110.0     # une caisse ne se voit pas de l'autre bout de l'île
+	mi.visibility_range_end_margin = 6.0
 	parent.add_child(mi)
 	mi.position = pos
 	return mi
