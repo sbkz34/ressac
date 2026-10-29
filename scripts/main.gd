@@ -824,6 +824,50 @@ func _check() -> void:
 	# ---------------------------------------------------------------------------------------
 	var bot_stats := await _check_bots()
 
+	# Manette : Y maintenu pose une plaque, Y bref change d'arme (par les vraies commandes).
+	var ar2 := player.arsenal
+	ar2.starting_kit()
+	ar2.slots = [Armes.nouvelle("faucon", 0), Armes.nouvelle("p9", 0)]
+	ar2.cur = 0
+	_spawn_at_range()
+	await _wait(0.3)
+	player.scripted = null
+	var armor0 := player.sante.armor
+	Input.action_press("arme_plaque")
+	await _wait(Joueur.HOLD_PLATE + ar2.plate_time() + 0.3)
+	Input.action_release("arme_plaque")
+	await _wait(0.2)
+	if player.sante.armor < armor0 + 49.0 or ar2.cur != 0:
+		_fail("Y maintenu : armure %.0f → %.0f, arme %d" % [armor0, player.sante.armor, ar2.cur])
+	Input.action_press("arme_plaque")
+	await _wait(0.08)
+	Input.action_release("arme_plaque")
+	await _wait(0.2)
+	if ar2.cur != 1:
+		_fail("Y bref : pas de changement d'arme")
+	player.scripted = Intentions.new()
+	# Touches : en donner une déjà prise l'échange ; « par défaut » remet tout.
+	var xb := InputEventJoypadButton.new()
+	xb.button_index = JOY_BUTTON_X
+	G.rebind("jump", true, xb)
+	if G.binding_name("jump", true) != "X" or G.binding_name("use", true) != "A":
+		_fail("touches : saut %s, ramasser %s" % [G.binding_name("jump", true), G.binding_name("use", true)])
+	var kk := InputEventKey.new()
+	kk.physical_keycode = KEY_V
+	G.rebind("plate", false, kk)
+	if G.binding_name("plate", false) != "V" or not InputMap.action_has_event("plate", kk):
+		_fail("touches : plaque au clavier %s" % G.binding_name("plate", false))
+	G.reset_bindings()
+	if G.binding_name("jump", true) != "A" or G.binding_name("use", true) != "X" or G.binding_name("plate", false) != "4":
+		_fail("touches : rétablissement (%s, %s, %s)" % [G.binding_name("jump", true), G.binding_name("use", true), G.binding_name("plate", false)])
+	hud.open_pause()
+	hud.open_binds()
+	await get_tree().process_frame
+	if hud._binds_grid.get_child_count() != 3 * (G.BINDABLE.size() + 1):
+		_fail("écran des touches : %d cases" % hud._binds_grid.get_child_count())
+	hud.close_binds()
+	hud.close_pause()
+
 	# Lobby : le bouton Réglages ouvre un menu visible, et le refermer ramène au lobby.
 	show_lobby()
 	await _wait(0.1)

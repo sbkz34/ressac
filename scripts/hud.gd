@@ -49,6 +49,10 @@ var _panel_kind := ""
 var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
+var _binds: Control
+var _binds_box: VBoxContainer
+var _binds_grid: GridContainer
+var _capture := {}             # touche en attente : {action, pad, t}
 var _mini: MiniMap
 var _hurt: HurtOverlay
 var _feed: Label
@@ -177,6 +181,7 @@ func _ready() -> void:
 	_map.visible = false
 	add_child(_map)
 	_build_pause()
+	_build_binds()
 	_build_panel()
 
 	G.input_mode_changed.connect(func(_m): _update_help())
@@ -363,6 +368,11 @@ func close_pause() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _binds.visible:
+		if _capture.is_empty() and (event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel")):
+			close_binds()
+			get_viewport().set_input_as_handled()
+		return
 	if _pause.visible:
 		if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel"):
 			close_pause()
@@ -420,8 +430,154 @@ func _build_pause() -> void:
 	fps.add_theme_font_size_override("font_size", 20)
 	fps.toggled.connect(func(on: bool): G.set_setting("show_fps", on))
 	_pause_box.add_child(fps)
+	_button("Touches (manette, clavier)", open_binds)
 	_lobby_btn = _button("Retour au lobby", func(): close_pause(); request_lobby.emit())
 	_button("Quitter le jeu", func(): get_tree().quit())
+
+
+# ------------------------------------------------------------------------------------------------
+# Touches : une case par action et par côté (manette, clavier / souris)
+# ------------------------------------------------------------------------------------------------
+func _build_binds() -> void:
+	_binds = Control.new()
+	_binds.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_binds.visible = false
+	add_child(_binds)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.05, 0.08, 0.9)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_binds.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_binds.add_child(center)
+	_binds_box = VBoxContainer.new()
+	_binds_box.add_theme_constant_override("separation", 10)
+	center.add_child(_binds_box)
+	var title := _label(_binds_box, 32, Color(1, 0.85, 0.45))
+	title.text = "TOUCHES"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var hint := _label(_binds_box, 17, Color(1, 1, 1, 0.75))
+	hint.text = "Choisir une case, puis appuyer sur la nouvelle touche (5 s pour annuler). Une touche déjà prise est échangée."
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(980, 400)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_binds_box.add_child(scroll)
+	_binds_grid = GridContainer.new()
+	_binds_grid.columns = 3
+	_binds_grid.add_theme_constant_override("h_separation", 12)
+	_binds_grid.add_theme_constant_override("v_separation", 6)
+	_binds_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_binds_grid)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_binds_box.add_child(row)
+	for pair in [["Rétablir les touches par défaut", func(): G.reset_bindings(); _fill_binds()], ["Retour", close_binds]]:
+		var b := Button.new()
+		b.text = pair[0]
+		b.add_theme_font_size_override("font_size", 20)
+		b.custom_minimum_size = Vector2(360, 50)
+		b.pressed.connect(pair[1])
+		row.add_child(b)
+
+
+func open_binds() -> void:
+	_pause.visible = false
+	_binds.visible = true
+	_capture = {}
+	_fill_binds()
+	var vp := get_viewport().get_visible_rect().size
+	var h := _binds_box.get_combined_minimum_size()
+	var sc := minf(clampf(float(G.settings.hud_scale), 0.5, 2.0), minf(vp.y * 0.96 / maxf(h.y, 1.0), vp.x * 0.96 / maxf(h.x, 1.0)))
+	_binds_box.scale = Vector2(sc, sc)
+	_binds_box.pivot_offset = h / 2
+
+
+func close_binds() -> void:
+	_capture = {}
+	_binds.visible = false
+	_pause.visible = true
+	_update_help()
+	_first_button.grab_focus.call_deferred()
+
+
+func _fill_binds() -> void:
+	var focus_first: Button = null
+	for n in _binds_grid.get_children():
+		_binds_grid.remove_child(n)
+		n.queue_free()
+	for h in ["Action", "Manette", "Clavier et souris"]:
+		var l := _label(_binds_grid, 17, Color(1, 0.85, 0.45))
+		l.text = h
+	for r in G.BINDABLE:
+		var l := _label(_binds_grid, 19, Color(1, 1, 1))
+		l.text = r[0]
+		l.custom_minimum_size = Vector2(470, 0)
+		for side in [true, false]:
+			var action: String = r[1] if side else r[2]
+			var b := Button.new()
+			b.custom_minimum_size = Vector2(230, 44)
+			b.add_theme_font_size_override("font_size", 19)
+			var waiting: bool = not _capture.is_empty() and _capture.action == action and _capture.pad == side
+			if action == "":
+				b.text = "—"
+				b.disabled = true
+			else:
+				b.text = "Appuyez…" if waiting else G.binding_name(action, side)
+				b.pressed.connect(func(): _start_capture(action, side))
+			_binds_grid.add_child(b)
+			if focus_first == null and not b.disabled:
+				focus_first = b
+	if focus_first and _capture.is_empty():
+		focus_first.grab_focus.call_deferred()
+
+
+func _start_capture(action: String, pad: bool) -> void:
+	_capture = {"action": action, "pad": pad, "t": 0.0}
+	_fill_binds()
+
+
+## Pendant la capture, la prochaine touche du bon côté devient la nouvelle touche de l'action.
+func _input(event: InputEvent) -> void:
+	if _capture.is_empty() or float(_capture.t) < 0.2:
+		return
+	var pad: bool = _capture.pad
+	var e: InputEvent = null
+	if pad:
+		if event is InputEventJoypadButton and event.pressed:
+			var b := InputEventJoypadButton.new()
+			b.device = G.ANY_DEVICE
+			b.button_index = (event as InputEventJoypadButton).button_index
+			e = b
+		elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.6 \
+				and (event.axis == JOY_AXIS_TRIGGER_LEFT or event.axis == JOY_AXIS_TRIGGER_RIGHT):
+			var m := InputEventJoypadMotion.new()
+			m.device = G.ANY_DEVICE
+			m.axis = (event as InputEventJoypadMotion).axis
+			m.axis_value = 1.0
+			e = m
+	else:
+		if event is InputEventKey and event.pressed and not event.echo:
+			if (event as InputEventKey).physical_keycode == KEY_ESCAPE:
+				_capture = {}
+				_fill_binds()
+				get_viewport().set_input_as_handled()
+				return
+			var k := InputEventKey.new()
+			k.physical_keycode = (event as InputEventKey).physical_keycode
+			e = k
+		elif event is InputEventMouseButton and event.pressed:
+			var mb := InputEventMouseButton.new()
+			mb.button_index = (event as InputEventMouseButton).button_index
+			e = mb
+	if e:
+		G.rebind(String(_capture.action), pad, e)
+		_capture = {}
+		_fill_binds()
+		get_viewport().set_input_as_handled()
+	elif G.is_pad_event(event) or G.is_kb_event(event):
+		get_viewport().set_input_as_handled()
 
 
 # ------------------------------------------------------------------------------------------------
@@ -584,13 +740,14 @@ func _slider(text: String, key: String, lo: float, hi: float, step: float, fmt: 
 # Textes selon l'état
 # ------------------------------------------------------------------------------------------------
 func key_name(action: String) -> String:
-	match G.input_mode:
-		"pad":
-			return {"jump": "A", "crouch": "B", "sprint": "L3", "carte": "Select", "pause": "Start"}.get(action, action)
-		"touch":
-			return {"jump": "SAUT", "crouch": "ACCROUPI", "sprint": "SPRINT", "carte": "CARTE", "pause": "II"}.get(action, action)
-		_:
-			return {"jump": "Espace", "crouch": "C", "sprint": "Maj", "carte": "M", "pause": "Échap"}.get(action, action)
+	if G.input_mode == "touch":
+		return {"jump": "SAUT", "crouch": "ACCROUPI", "sprint": "SPRINT", "carte": "CARTE", "pause": "II",
+			"use": "ACTION", "interact": "ACTION", "reload": "RECH.", "plate": "PLAQUE"}.get(action, action)
+	var pad := G.input_mode == "pad"
+	if pad and action in ["interact", "reload"]:
+		action = "use"
+	var n := G.binding_name(action, pad)
+	return n if n != "" else action
 
 
 func _update_help() -> void:
@@ -600,13 +757,21 @@ func _update_help() -> void:
 	if player.is_drone():
 		_help.text = "%s / %s : monter / descendre  ·  %s : rapide  ·  F : quitter le drone" % [key_name("jump"), key_name("crouch"), key_name("sprint")]
 		return
+	var k := func(a: String) -> String: return key_name(a)
 	if G.input_mode == "pad":
-		_help.text = "RT tirer · LT viser · X ramasser / recharger · Y arme · RB plaque · A sauter · B accroupi, glissade · L3 sprint · Select carte"
+		_help.text = "%s tirer · %s viser · %s ramasser / recharger · %s arme (maintenir : plaque) · %s sauter · %s accroupi, glissade · %s sprint · %s carte" % [
+			k.call("fire"), k.call("ads"), k.call("use"), G.binding_name("arme_plaque", true), k.call("jump"), k.call("crouch"), k.call("sprint"), k.call("carte")]
 	else:
-		_help.text = "Clic tirer · clic droit viser · E ramasser · R recharger · 1/2 arme · 4 plaque · Espace sauter · C accroupi, glissade · Maj sprint · M carte"
+		_help.text = "%s tirer · %s viser · %s ramasser · %s recharger · %s arme · %s plaque · %s sauter · %s accroupi, glissade · %s sprint · %s carte" % [
+			k.call("fire"), k.call("ads"), k.call("interact"), k.call("reload"), k.call("swap"), k.call("plate"), k.call("jump"), k.call("crouch"), k.call("sprint"), k.call("carte")]
 
 
 func _process(delta: float) -> void:
+	if not _capture.is_empty():
+		_capture.t = float(_capture.t) + delta
+		if float(_capture.t) > 5.2:
+			_capture = {}
+			_fill_binds()
 	if player == null:
 		return
 	_vitals.visible = player.etat != Joueur.Etat.DRONE
@@ -672,16 +837,17 @@ func _process(delta: float) -> void:
 		tl["fumigene"] = "FUMI. %d" % a.tactique_n
 	if a.target_item:
 		tl["action"] = "OUVRIR" if a.target_item is Coffre else "PRENDRE"
-		var k: String = {"pad": "X", "touch": "ACTION"}.get(G.input_mode, "E")
+		var k := key_name("interact")
 		_prompt.text = "%s : %s" % [k, a.interact_label()]
 	else:
 		_prompt.text = ""
 		var w := a.current()
 		if not w.is_empty() and int(w.chargeur) == 0 and a.can_use_weapon():
-			_prompt.text = "Recharger (%s)" % {"pad": "X", "touch": "RECH."}.get(G.input_mode, "R") if int(a.reserve[Armes.info(w.id).munition]) > 0 else "Plus de munitions"
+			_prompt.text = "Recharger (%s)" % key_name("reload") if int(a.reserve[Armes.info(w.id).munition]) > 0 else "Plus de munitions"
 		elif a.plates > 0 and a.plate_t <= 0.0 and player.sante.armor < player.sante.armor_max - 1.0 and a.can_use_weapon():
 			# Rappel : comment remettre une plaque (maintenir).
-			_prompt.text = "Plaque : maintenir %s" % {"pad": "croix haut", "touch": "PLAQUE"}.get(G.input_mode, "4")
+			var how := "%s ou %s" % [G.binding_name("arme_plaque", true), G.binding_name("plate", true)] if G.input_mode == "pad" else key_name("plate")
+			_prompt.text = "Plaque : maintenir %s" % how
 	if _panel.visible:
 		_prompt.text = ""
 	if not a.can_use_weapon():

@@ -27,6 +27,7 @@ var settings := {
 	"show_fps": true,
 	"bots": 15,             # adversaires dans une partie (0 à 23)
 	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
+	"touches": {},          # touches changées : "pad:action" / "clavier:action" -> touche
 }
 const SETTINGS_PATH := "user://settings.cfg"
 
@@ -56,8 +57,13 @@ func _ready() -> void:
 			screenshot_dir = a.substr(8)
 	data = load_json("res://data/ile.json")
 	_setup_input()
+	for row in BINDABLE:
+		for a in [row[1], row[2]]:
+			if a != "" and not _default_events.has(a):
+				_default_events[a] = InputMap.action_get_events(a).duplicate()
 	if not check_mode:
 		_load_settings()
+	apply_bindings()
 	for i in 6:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -124,6 +130,182 @@ func save_settings() -> void:
 	for k in settings:
 		cf.set_value("reglages", k, settings[k])
 	cf.save(SETTINGS_PATH)
+
+
+# ------------------------------------------------------------------------------------------------
+# Touches réattribuables (manette et clavier / souris, séparément)
+# ------------------------------------------------------------------------------------------------
+## [libellé, action à la manette, action au clavier] ("" : pas réglable de ce côté).
+const BINDABLE := [
+	["Tirer", "fire", "fire"],
+	["Viser", "ads", "ads"],
+	["Sauter, escalader, parachute", "jump", "jump"],
+	["Accroupi, glissade", "crouch", "crouch"],
+	["Sprint, sprint tactique", "sprint", "sprint"],
+	["Ramasser, ouvrir (manette : et recharger)", "use", "interact"],
+	["Recharger", "", "reload"],
+	["Changer d'arme (manette : maintenir = plaque)", "arme_plaque", "swap"],
+	["Plaque d'armure (maintenir)", "plate", "plate"],
+	["Grenade", "lethal", "lethal"],
+	["Fumigène", "tactical", "tactical"],
+	["Carte", "carte", "carte"],
+	["Pause", "pause", "pause"],
+]
+const PAD_NAMES := {
+	JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "X", JOY_BUTTON_Y: "Y",
+	JOY_BUTTON_LEFT_SHOULDER: "LB", JOY_BUTTON_RIGHT_SHOULDER: "RB", JOY_BUTTON_LEFT_STICK: "L3",
+	JOY_BUTTON_RIGHT_STICK: "R3", JOY_BUTTON_BACK: "Select", JOY_BUTTON_START: "Start",
+	JOY_BUTTON_DPAD_UP: "Croix haut", JOY_BUTTON_DPAD_DOWN: "Croix bas", JOY_BUTTON_DPAD_LEFT: "Croix gauche",
+	JOY_BUTTON_DPAD_RIGHT: "Croix droite", JOY_BUTTON_MISC1: "LT", JOY_BUTTON_PADDLE1: "RT",
+	JOY_BUTTON_GUIDE: "Accueil",
+}
+var _default_events := {}
+
+
+static func is_pad_event(e: InputEvent) -> bool:
+	return e is InputEventJoypadButton or e is InputEventJoypadMotion
+
+
+static func is_kb_event(e: InputEvent) -> bool:
+	return e is InputEventKey or e is InputEventMouseButton
+
+
+## Nom lisible d'une touche.
+static func event_name(e: InputEvent) -> String:
+	if e is InputEventJoypadButton:
+		return PAD_NAMES.get((e as InputEventJoypadButton).button_index, "Bouton %d" % (e as InputEventJoypadButton).button_index)
+	if e is InputEventJoypadMotion:
+		var m := e as InputEventJoypadMotion
+		if m.axis == JOY_AXIS_TRIGGER_LEFT:
+			return "LT"
+		if m.axis == JOY_AXIS_TRIGGER_RIGHT:
+			return "RT"
+		return "Axe %d%s" % [m.axis, "+" if m.axis_value > 0 else "−"]
+	if e is InputEventKey:
+		var k := e as InputEventKey
+		var code := DisplayServer.keyboard_get_keycode_from_physical(k.physical_keycode) if k.physical_keycode != KEY_NONE else k.keycode
+		var n := OS.get_keycode_string(code)
+		return {"Space": "Espace", "Shift": "Maj", "Ctrl": "Ctrl", "Escape": "Échap", "Tab": "Tab", "Enter": "Entrée"}.get(n, n)
+	if e is InputEventMouseButton:
+		return {MOUSE_BUTTON_LEFT: "Clic gauche", MOUSE_BUTTON_RIGHT: "Clic droit", MOUSE_BUTTON_MIDDLE: "Clic molette",
+			MOUSE_BUTTON_WHEEL_UP: "Molette haut", MOUSE_BUTTON_WHEEL_DOWN: "Molette bas",
+			MOUSE_BUTTON_XBUTTON1: "Souris 4", MOUSE_BUTTON_XBUTTON2: "Souris 5"}.get((e as InputEventMouseButton).button_index, "Souris")
+	return "?"
+
+
+## Touche actuelle d'une action, côté manette ou clavier ("" si aucune).
+func binding_name(action: String, pad: bool) -> String:
+	if action == "" or not InputMap.has_action(action):
+		return ""
+	for e in InputMap.action_get_events(action):
+		if (pad and is_pad_event(e)) or (not pad and is_kb_event(e)):
+			return event_name(e)
+	return ""
+
+
+static func _ser(e: InputEvent) -> Dictionary:
+	if e is InputEventJoypadButton:
+		return {"t": "bouton", "i": (e as InputEventJoypadButton).button_index}
+	if e is InputEventJoypadMotion:
+		return {"t": "axe", "i": (e as InputEventJoypadMotion).axis, "v": signf((e as InputEventJoypadMotion).axis_value)}
+	if e is InputEventKey:
+		return {"t": "touche", "i": (e as InputEventKey).physical_keycode}
+	if e is InputEventMouseButton:
+		return {"t": "souris", "i": (e as InputEventMouseButton).button_index}
+	return {}
+
+
+static func _deser(d: Dictionary) -> InputEvent:
+	match String(d.get("t", "")):
+		"bouton":
+			var b := InputEventJoypadButton.new()
+			b.device = ANY_DEVICE
+			b.button_index = int(d.i)
+			return b
+		"axe":
+			var m := InputEventJoypadMotion.new()
+			m.device = ANY_DEVICE
+			m.axis = int(d.i)
+			m.axis_value = float(d.v)
+			return m
+		"touche":
+			var k := InputEventKey.new()
+			k.physical_keycode = int(d.i)
+			return k
+		"souris":
+			var mb := InputEventMouseButton.new()
+			mb.button_index = int(d.i)
+			return mb
+	return null
+
+
+func _set_side(action: String, pad: bool, events: Array) -> void:
+	for e in InputMap.action_get_events(action):
+		if (pad and is_pad_event(e)) or (not pad and is_kb_event(e)):
+			InputMap.action_erase_event(action, e)
+	for e in events:
+		InputMap.action_add_event(action, e)
+
+
+func _same(a: InputEvent, b: InputEvent) -> bool:
+	return _ser(a) == _ser(b) or (a is InputEventJoypadMotion and b is InputEventJoypadMotion \
+		and (a as InputEventJoypadMotion).axis == (b as InputEventJoypadMotion).axis)
+
+
+## Remet toutes les actions réglables comme au départ, puis applique les touches changées.
+func apply_bindings() -> void:
+	for a in _default_events:
+		var pad_ev := []
+		var kb_ev := []
+		for e in _default_events[a]:
+			if is_pad_event(e):
+				pad_ev.append(e)
+			elif is_kb_event(e):
+				kb_ev.append(e)
+		_set_side(a, true, pad_ev)
+		_set_side(a, false, kb_ev)
+	var t: Dictionary = settings.get("touches", {})
+	for key in t:
+		var parts := String(key).split(":")
+		if parts.size() != 2 or not InputMap.has_action(parts[1]):
+			continue
+		var e := _deser(t[key])
+		if e:
+			_set_side(parts[1], parts[0] == "pad", [e])
+
+
+## Donne une nouvelle touche à une action. Si une autre action réglable l'utilisait déjà,
+## elle prend l'ancienne touche de celle-ci (échange).
+func rebind(action: String, pad: bool, e: InputEvent) -> void:
+	var side := "pad" if pad else "clavier"
+	var old: InputEvent = null
+	for x in InputMap.action_get_events(action):
+		if (pad and is_pad_event(x)) or (not pad and is_kb_event(x)):
+			old = x
+			break
+	var t: Dictionary = settings.get("touches", {}).duplicate()
+	for row in BINDABLE:
+		var other: String = row[1] if pad else row[2]
+		if other == "" or other == action:
+			continue
+		for x in InputMap.action_get_events(other):
+			if ((pad and is_pad_event(x)) or (not pad and is_kb_event(x))) and _same(x, e):
+				if old:
+					t["%s:%s" % [side, other]] = _ser(old)
+				else:
+					t.erase("%s:%s" % [side, other])
+	t["%s:%s" % [side, action]] = _ser(e)
+	settings.touches = t
+	apply_bindings()
+	save_settings()
+	settings_changed.emit()
+
+
+func reset_bindings() -> void:
+	settings.touches = {}
+	apply_bindings()
+	save_settings()
+	settings_changed.emit()
 
 
 # ------------------------------------------------------------------------------------------------
@@ -248,8 +430,10 @@ func _setup_input() -> void:
 	_add("reload"); _key("reload", KEY_R)
 	_add("interact"); _key("interact", KEY_E); _key("interact", KEY_F)
 	_add("use"); _btn("use", JOY_BUTTON_X)
-	_add("swap"); _key("swap", KEY_1); _key("swap", KEY_2); _btn("swap", JOY_BUTTON_Y)
+	_add("swap"); _key("swap", KEY_1); _key("swap", KEY_2)
 	_mouse("swap", MOUSE_BUTTON_WHEEL_UP); _mouse("swap", MOUSE_BUTTON_WHEEL_DOWN)
+	# Manette : Y appuyé = changer d'arme, Y maintenu = poser des plaques (comme Warzone).
+	_add("arme_plaque"); _btn("arme_plaque", JOY_BUTTON_Y)
 	_add("plate"); _key("plate", KEY_4); _key("plate", KEY_X); _btn("plate", JOY_BUTTON_DPAD_UP)
 	_add("lethal"); _key("lethal", KEY_G); _btn("lethal", JOY_BUTTON_RIGHT_SHOULDER)
 	_add("tactical"); _key("tactical", KEY_T); _btn("tactical", JOY_BUTTON_LEFT_SHOULDER)
