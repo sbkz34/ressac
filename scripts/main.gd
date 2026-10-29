@@ -824,6 +824,20 @@ func _check() -> void:
 	# ---------------------------------------------------------------------------------------
 	var bot_stats := await _check_bots()
 
+	# Lobby : le bouton Réglages ouvre un menu visible, et le refermer ramène au lobby.
+	show_lobby()
+	await _wait(0.1)
+	lobby.settings.emit()
+	await get_tree().process_frame
+	if not hud.visible or not hud._pause.is_visible_in_tree() or hud._frame.visible:
+		_fail("lobby : réglages invisibles (hud %s, menu %s)" % [hud.visible, hud._pause.is_visible_in_tree()])
+	hud.close_pause()
+	await get_tree().process_frame
+	if hud.visible or not lobby.visible or get_tree().paused:
+		_fail("lobby : retour des réglages (hud %s, lobby %s)" % [hud.visible, lobby.visible])
+	_set_mode("entrainement")
+	player.ui_block = false
+
 	# Lobby : les boutons du nombre de bots et de la difficulté font le tour des choix.
 	var bots0 := int(G.settings.bots)
 	var seen := []

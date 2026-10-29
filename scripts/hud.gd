@@ -335,6 +335,10 @@ func open_pause() -> void:
 	close_panel()
 	_pause.visible = true
 	_map.visible = false
+	# Depuis le lobby, l'interface de jeu est masquée : on ne montre que le menu.
+	if mode == "lobby":
+		visible = true
+		_frame.visible = false
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var training := mode == "entrainement"
@@ -352,7 +356,9 @@ func open_pause() -> void:
 func close_pause() -> void:
 	_pause.visible = false
 	get_tree().paused = false
+	_frame.visible = true
 	if mode == "lobby":
+		visible = false
 		request_settings_closed.emit()
 
 
