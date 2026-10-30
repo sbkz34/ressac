@@ -42,6 +42,7 @@ var reload_t := 0.0
 var plate_t := 0.0
 var target_item: Node3D        # butin (arme) ou coffre à portée de main
 var burst_n := 0               # rang du tir dans la rafale (motif de recul)
+var coffres_ouverts := 0       # statistiques (progression)
 var _since_shot := 9.0
 var assist_target: Node3D
 var shots_fired := 0
@@ -505,6 +506,7 @@ func _interact(t: Node3D) -> void:
 		if c.ravitaillement:
 			refill()
 		c.open_chest()
+		coffres_ouverts += 1
 		return
 	if t.has_meta("boutique"):
 		shop_requested.emit(t)

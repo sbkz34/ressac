@@ -67,6 +67,7 @@ var etat: int = Etat.SOL
 var _zip_pts := PackedVector3Array()   # tyrolienne : trajet (pieds) et distance parcourue
 var _zip_s := 0.0
 var _zip_up := true
+var tyroliennes := 0                   # nombre de trajets (statistiques)
 var posture: int = Posture.DEBOUT
 var sprinting := false
 var swimming := false
@@ -768,6 +769,7 @@ func start_zip(t: Tyrolienne, monte: bool) -> void:
 	_set_posture(Posture.DEBOUT, true)
 	velocity = Vector3.ZERO
 	_set_etat(Etat.TYROLIENNE)
+	tyroliennes += 1
 	_snd("tyrolienne", -8.0, 1.0 if monte else 1.12)
 
 

@@ -11,6 +11,8 @@ signal settings
 var _root: Control
 var _menu: VBoxContainer
 var ecran_classes: EcranClasses
+var ecran_progression: EcranProgression
+var _niveau: Label
 var _title: Label
 var _sub: Label
 var _first: Button
@@ -41,11 +43,24 @@ func _ready() -> void:
 	level_button = _button(_menu, _level_text(), _next_level)
 	_button(_menu, "Entraînement (champ de tir)", func(): training.emit())
 	_button(_menu, "Classes", _show_classes)
+	_button(_menu, "Progression", _show_progression)
 	_button(_menu, "Réglages", func(): settings.emit())
 	_button(_menu, "Quitter", func(): get_tree().quit())
 	ecran_classes = EcranClasses.new()
 	_root.add_child(ecran_classes)
 	ecran_classes.closed.connect(show_menu)
+	ecran_progression = EcranProgression.new()
+	_root.add_child(ecran_progression)
+	ecran_progression.closed.connect(show_menu)
+	# Niveau du joueur, en haut à droite.
+	_niveau = UIStyle.label(_root, "", "titre", 30, UIStyle.OR)
+	_niveau.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_niveau.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_niveau.offset_left = -420
+	_niveau.offset_right = -50
+	_niveau.offset_top = 48
+	_niveau.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_niveau.add_theme_constant_override("outline_size", 8)
 
 
 func _next_bots() -> void:
@@ -77,6 +92,10 @@ func show_menu() -> void:
 	_title.visible = true
 	_sub.visible = true
 	ecran_classes.visible = false
+	ecran_progression.visible = false
+	_niveau.visible = true
+	var nv := Progression.niveau_de(int(Progression._d().xp))
+	_niveau.text = "NIVEAU %d\n%s / %s XP" % [int(nv[0]), Progression._nombre(int(nv[1])), Progression._nombre(int(nv[2]))]
 	_first.grab_focus.call_deferred()
 
 
@@ -95,7 +114,7 @@ func _column(at: Vector2) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.position = at
 	v.custom_minimum_size = Vector2(480, 0)
-	v.add_theme_constant_override("separation", 10)
+	v.add_theme_constant_override("separation", 8)
 	_root.add_child(v)
 	return v
 
@@ -105,7 +124,7 @@ func _button(parent: Control, text: String, cb: Callable) -> Button:
 	b.text = text
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_size_override("font_size", 24)
-	b.custom_minimum_size = Vector2(480, 54)
+	b.custom_minimum_size = Vector2(480, 50)
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b
@@ -114,10 +133,19 @@ func _button(parent: Control, text: String, cb: Callable) -> Button:
 # ------------------------------------------------------------------------------------------------
 # Classes (écran dédié : ecran_classes.gd)
 # ------------------------------------------------------------------------------------------------
+func _show_progression(tab := "") -> void:
+	_menu.visible = false
+	_title.visible = false
+	_sub.visible = false
+	_niveau.visible = false
+	ecran_progression.open(tab)
+
+
 func _show_classes(k := 0) -> void:
 	_menu.visible = false
 	_title.visible = false
 	_sub.visible = false
+	_niveau.visible = false
 	ecran_classes.open(k)
 
 

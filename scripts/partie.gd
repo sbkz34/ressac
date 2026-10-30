@@ -24,6 +24,11 @@ var respawn_left := -1.0           # compte à rebours du joueur (négatif : viv
 var time := 0.0
 var deaths := 0
 var stats := {}
+var _compte := false
+var _serie_n := 0
+var _tirs0 := 0
+var _coffres0 := 0
+var _tyro0 := 0
 var last_drop := {}                # zone visée au dernier redéploiement (tests)
 var combatants: Array[Joueur] = []
 var info := {}                     # combattant -> {respawn, out, kills, deaths}
@@ -47,6 +52,7 @@ func setup(p: Joueur, pl: Pillage, i: Ile) -> void:
 	add_child(contrats)
 	contrats.message.connect(func(t): message.emit(t))
 	player.arsenal.contract_requested.connect(func(t): contrats.prendre(t))
+	player.arsenal.hit.connect(_on_player_hit)
 	Boutique.series = _serie
 
 
@@ -64,11 +70,39 @@ func start(seed_value: int) -> void:
 	time = 0.0
 	deaths = 0
 	stats = {"temps": 0.0, "morts": 0, "phase": 1, "argent": 0, "eliminations": 0,
-		"place": 0, "total": combatants.size()}
+		"place": 0, "total": combatants.size(), "touches": 0, "tetes": 0, "degats": 0.0, "contrats": 0,
+		"elim_explosif": 0, "armes": {}, "serie": 0}
+	_compte = false
+	_serie_n = 0
+	_tirs0 = player.arsenal.shots_fired
+	_coffres0 = player.arsenal.coffres_ouverts
+	_tyro0 = player.tyroliennes
 	brume.start(seed_value)
 	contrats.setup(self)
 	contrats.spawn_tablettes()
 	message.emit("Fin de partie prévue : %s" % brume.final_place)
+
+
+## Touche du joueur (statistiques).
+func _on_player_hit(kind: String, amount: float) -> void:
+	if not running:
+		return
+	stats.touches = int(stats.touches) + 1
+	stats.degats = float(stats.degats) + amount
+	if kind == "tete":
+		stats.tetes = int(stats.tetes) + 1
+
+
+## Compte la partie pour la progression (une seule fois : à la fin, ou en la quittant).
+func _compter(victory: bool) -> void:
+	if _compte:
+		return
+	_compte = true
+	stats.temps = time
+	stats.tirs = player.arsenal.shots_fired - _tirs0
+	stats.coffres = player.arsenal.coffres_ouverts - _coffres0
+	stats.tyroliennes = player.tyroliennes - _tyro0
+	stats.progression = Progression.compter(stats, victory)
 
 
 func respawn_time() -> float:
@@ -147,6 +181,14 @@ func _on_died(c: Joueur) -> void:
 		info[by].kills = int(info[by].kills) + 1
 		if by == player:
 			stats.eliminations = int(stats.eliminations) + 1
+			_serie_n += 1
+			stats.serie = maxi(int(stats.serie), _serie_n)
+			if cause == "grenade":
+				stats.elim_explosif = int(stats.elim_explosif) + 1
+			else:
+				var wid := String(player.arsenal.current().get("id", ""))
+				if wid != "":
+					stats.armes[wid] = int(stats.armes.get(wid, 0)) + 1
 		var bb := by.get_node_or_null("Bot") as Bot
 		if bb:
 			bb.kills += 1
@@ -159,6 +201,7 @@ func _on_died(c: Joueur) -> void:
 	if c == player:
 		deaths += 1
 		stats.morts = deaths
+		_serie_n = 0
 	if respawn_open:
 		inf.respawn = respawn_time()
 		if c == player:
@@ -212,6 +255,7 @@ func _finish(victory: bool) -> void:
 		stats.place = 1
 	for c in combatants:
 		c.in_gas = false
+	_compter(victory)
 	ended.emit(victory, stats)
 
 
@@ -227,6 +271,9 @@ func _serie(id: String) -> void:
 
 func stop() -> void:
 	Boutique.series = Callable()
+	if running and time > 1.0:
+		stats.place = 0          # partie quittée : pas de classement
+		_compter(false)
 	running = false
 	for c in combatants:
 		c.in_gas = false

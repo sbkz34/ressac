@@ -1048,6 +1048,56 @@ func _check() -> void:
 	get_tree().quit(0 if _errors.is_empty() else 1)
 
 
+## Progression : niveaux, expérience d'une partie, défis, camouflages (sur l'arme en main),
+## écran du lobby ; mesures de performances.
+func _check_progression() -> String:
+	if Progression.niveau_de(0) != [1, 0, 800] or Progression.niveau_de(800) != [2, 0, 920]:
+		_fail("niveaux : %s, %s" % [Progression.niveau_de(0), Progression.niveau_de(800)])
+	Progression.data = Progression._vide()
+	var r := Progression.compter({"eliminations": 12, "tetes": 30, "contrats": 1, "coffres": 4, "temps": 600.0,
+		"place": 1, "total": 16, "armes": {"faucon": 16}, "tirs": 100, "touches": 60, "degats": 3000.0, "serie": 5}, true)
+	var sum := 0
+	for l in r.lignes:
+		sum += int(l[1])
+	if int(r.total) != sum or r.defis.size() != 7 or r.camos.size() != 2 or int(r.apres[0]) < 5 or int(Progression.data.xp) != sum:
+		_fail("progression : %d XP (somme %d), %d défis, camos %s, niveau %s" % [int(r.total), sum, r.defis.size(), r.camos, r.apres])
+	if Progression.stat("victoires") != 1 or Progression.stat("meilleure_serie") != 5 or Progression.stat("top5") != 1:
+		_fail("progression : statistiques %s" % [Progression.data.stats])
+	if Progression.choisir_camo("faucon", "or") or not Progression.choisir_camo("faucon", "foret") or Progression.camo("faucon") != "foret":
+		_fail("camouflages : choix %s" % Progression.camo("faucon"))
+	# Le camouflage se voit sur l'arme en main.
+	var ar := player.arsenal
+	ar.slots = [Armes.nouvelle("faucon", 0, []), {}]
+	ar.cur = 0
+	ar.view.set_weapon(ar.current(), false)
+	var camo_mat: Material = Armes.materiaux(0, "foret").metal
+	if not ar.view._gun.find_children("*", "MeshInstance3D", true, false).any(func(mi): return mi.material_override == camo_mat):
+		_fail("camouflage absent de l'arme en main")
+	# Écran du lobby : les trois onglets se construisent.
+	show_lobby()
+	await _wait(0.1)
+	for tab in ["defis", "camos", "stats"]:
+		lobby._show_progression(tab)
+		await _wait(0.1)
+		if not lobby.ecran_progression.visible or lobby.ecran_progression._content.get_child_count() == 0:
+			_fail("écran progression : onglet %s vide" % tab)
+	if lobby.ecran_progression._apercu != null:
+		_fail("écran progression : aperçu resté d'un autre onglet")
+	lobby.ecran_progression._close()
+	await _wait(0.1)
+	if not lobby._menu.visible or not lobby._niveau.text.begins_with("NIVEAU %d" % Progression.niveau()):
+		_fail("lobby : niveau %s" % lobby._niveau.text)
+	# Mesures de performances.
+	_set_mode("entrainement")
+	G.set_setting("mesures", true)
+	await _wait(0.5)
+	if not hud._perf.visible or not hud._perf.text.contains("appels de dessin"):
+		_fail("mesures de performances : %s" % hud._perf.text)
+	G.set_setting("mesures", false)
+	Progression.data = Progression._vide()
+	return "progression : %d XP pour une partie test" % sum
+
+
 ## Tyroliennes : posées au sol et sur une plateforme, le joueur monte et descend, lâche le câble ;
 ## un bot qui veut aller au sommet passe par la tyrolienne (lien de navigation).
 func _check_tyroliennes() -> String:
@@ -1360,8 +1410,15 @@ func _check_bots() -> String:
 		_fail("élimination du joueur : %s, %d élim., fil %s" % [prey.sante.dead, int(partie.stats.get("eliminations", 0)), feed])
 	elif partie.respawn_open and float(partie.info[prey].respawn) <= 0.0:
 		_fail("bot éliminé : pas de réapparition prévue")
+	# En quittant la partie, elle compte pour la progression (élimination au Faucon).
+	var elim0 := Progression.stat("eliminations")
+	var faucon0 := Progression.elim_arme("faucon")
+	var parties0 := Progression.stat("parties")
 	_end_partie()
 	await _wait(0.1)
+	if Progression.stat("eliminations") != elim0 + 1 or Progression.elim_arme("faucon") != faucon0 + 1 or Progression.stat("parties") != parties0 + 1:
+		_fail("progression : partie mal comptée (%s)" % [Progression.data.stats])
+	out.append(await _check_progression())
 
 	# Contrats et séries.
 	out.append(await _check_contrats())
@@ -1772,8 +1829,29 @@ func _tour() -> void:
 	hud.open_loadout_choice(crate)
 	await _shot(dir, "36_largage")
 	hud.close_panel()
-	hud.show_end(true, {"temps": 612.0, "phase": 6, "morts": 2, "argent": 3150})
+	# Progression d'exemple (non enregistrée) pour les captures.
+	var saved := Progression.data.duplicate(true)
+	Progression.data = Progression._vide()
+	var rep := Progression.compter({"eliminations": 9, "tetes": 22, "contrats": 2, "coffres": 6, "temps": 612.0,
+		"place": 1, "total": 16, "armes": {"faucon": 7, "vipere": 2}, "tirs": 240, "touches": 130, "degats": 2900.0, "serie": 4}, true)
+	hud.show_end(true, {"temps": 612.0, "phase": 6, "morts": 2, "argent": 3150, "place": 1, "total": 16, "eliminations": 9, "progression": rep})
 	await _shot(dir, "37_fin")
+	Progression.data.armes["faucon"] = 34
+	Progression.data.camos["faucon"] = "foret"
+	hud.close_panel()
+	_set_mode("lobby")
+	lobby.show_menu()
+	await _shot(dir, "30b_lobby_niveau")
+	lobby._show_progression("defis")
+	await _shot(dir, "49_defis")
+	lobby._show_progression("camos")
+	await _wait(0.3)
+	await _shot(dir, "49b_camouflages")
+	lobby._show_progression("stats")
+	await _shot(dir, "49c_statistiques")
+	lobby.ecran_progression._close()
+	Progression.data = saved
+	_set_mode("partie")
 	hud.close_panel()
 	player.sante.invulnerable = false
 	hud.mode = "partie"

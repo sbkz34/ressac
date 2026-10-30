@@ -26,6 +26,10 @@ var _state: Label
 var _tac: ProgressBar
 var _help: Label
 var _fps: Label
+var _perf: Label
+var _perf_t := 0.0
+var _perf_acc := [0.0, 0.0, 0.0, 0]   # sommes : image, processeur, graphique ; nombre d'images
+var _perf_on := false
 var _map: MapView
 var _cross: Crosshair
 var _vitals: Vitals
@@ -95,6 +99,10 @@ func _ready() -> void:
 	_fps.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_fps.offset_left = MiniMap.SIDE + 14
 	_fps.offset_top = 4
+	_perf = _label(_frame, 14, Color(0.75, 0.95, 1.0, 0.85))
+	_perf.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_perf.offset_left = MiniMap.SIDE + 14
+	_perf.offset_top = 26
 	_state = _label(_frame, 24, Color(1, 1, 1))
 	_state.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -460,6 +468,39 @@ func _layout() -> void:
 		_pause_box.scale = Vector2(ps, ps)
 		_pause_box.pivot_offset = _pause_box.get_combined_minimum_size() / 2
 	_fps.visible = bool(G.settings.show_fps)
+	var on := bool(G.settings.get("mesures", false))
+	_perf.visible = on
+	if on != _perf_on:
+		_perf_on = on
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), on)
+
+
+## Mesures de performances (moyennes sur un quart de seconde) : temps d'une image, du processeur
+## (scripts, physique, préparation du rendu) et de la carte graphique, appels de dessin, objets,
+## triangles, mémoire.
+func _update_perf(delta: float) -> void:
+	var rid := get_viewport().get_viewport_rid()
+	_perf_acc[0] += delta * 1000.0
+	_perf_acc[1] += RenderingServer.viewport_get_measured_render_time_cpu(rid) + RenderingServer.get_frame_setup_time_cpu()
+	_perf_acc[2] += RenderingServer.viewport_get_measured_render_time_gpu(rid)
+	_perf_acc[3] += 1
+	_perf_t += delta
+	if _perf_t < 0.25:
+		return
+	var n := float(maxi(int(_perf_acc[3]), 1))
+	var frame: float = _perf_acc[0] / n
+	var render_cpu: float = _perf_acc[1] / n
+	var gpu: float = _perf_acc[2] / n
+	var scripts := (Performance.get_monitor(Performance.TIME_PROCESS) + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
+	var f := func(x: float) -> String: return ("%.1f" % x).replace(".", ",")
+	_perf.text = "image %s ms · jeu %s ms · rendu %s ms · GPU %s\n%d appels de dessin · %d objets · %s k triangles · %d Mo" % [
+		f.call(frame), f.call(scripts), f.call(render_cpu), (f.call(gpu) + " ms") if gpu > 0.0 else "n. d.",
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
+		f.call(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0),
+		int(Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0)]
+	_perf_t = 0.0
+	_perf_acc = [0.0, 0.0, 0.0, 0]
 
 
 ## Rectangle (en pixels de l'écran) dans lequel l'interface est dessinée : pour les tests.
@@ -896,10 +937,46 @@ func show_end(victory: bool, stats: Dictionary) -> void:
 	for l in lines:
 		var lbl := _label(_panel_box, 22, Color(1, 1, 1))
 		lbl.text = l
+	if stats.has("progression"):
+		_progression_report(stats.progression)
 	_panel_button("Retour au lobby", func():
 		close_panel()
 		request_lobby.emit())
 	_panel_end()
+
+
+## Expérience gagnée, niveau, défis et camouflages débloqués (écran de fin).
+func _progression_report(r: Dictionary) -> void:
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 14)
+	_panel_box.add_child(head)
+	UIStyle.label(head, "+%s XP" % Progression._nombre(int(r.total)), "titre", 30, UIStyle.OR)
+	var av: Array = r.avant
+	var ap: Array = r.apres
+	var lvl_txt := "NIVEAU %d" % int(ap[0]) if int(ap[0]) == int(av[0]) else "NIVEAU %d → %d" % [int(av[0]), int(ap[0])]
+	var lv := UIStyle.label(head, lvl_txt, "titre", 30, UIStyle.TEXTE if int(ap[0]) == int(av[0]) else Color(0.55, 0.9, 1.0))
+	lv.size_flags_vertical = Control.SIZE_SHRINK_END
+	var bar := ProgressBar.new()
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 10)
+	bar.max_value = float(ap[2])
+	bar.value = float(ap[1])
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = UIStyle.OR
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(1, 1, 1, 0.12)
+	bar.add_theme_stylebox_override("fill", fill)
+	bar.add_theme_stylebox_override("background", bg)
+	_panel_box.add_child(bar)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 26)
+	_panel_box.add_child(grid)
+	for l in r.lignes:
+		UIStyle.label(grid, String(l[0]), "texte", 17, UIStyle.DOUX)
+		UIStyle.label(grid, "+%s" % Progression._nombre(int(l[1])), "gras", 17, UIStyle.TEXTE).horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	for c in r.camos:
+		UIStyle.label(_panel_box, "Camouflage débloqué · %s" % c, "gras", 17, Color(0.55, 0.9, 1.0))
 
 
 func _button(text: String, cb: Callable) -> Button:
@@ -982,6 +1059,8 @@ func _process(delta: float) -> void:
 	var names := ["N", "NE", "E", "SE", "S", "SO", "O", "NO"]
 	_compass.text = "%s  %d°  ·  alt. %d m" % [names[int(round(heading / 45.0)) % 8], int(heading), int(p.y)]
 	_fps.text = "%d i/s  ·  %.1f m/s" % [Engine.get_frames_per_second(), player.hspeed]
+	if _perf_on:
+		_update_perf(delta)
 	var st := ""
 	var tl := {}
 	match player.etat:

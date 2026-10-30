@@ -237,7 +237,67 @@ static func _mat(c: Color, metal: float, rough: float, glow := Color(0, 0, 0), e
 	return m
 
 
-static func materiaux(rarete: int) -> Dictionary:
+## Teintes des camouflages (taches en trois tons ; « tigre » en bandes ; « or » métallique).
+const CAMO_TEINTES := {
+	"sable": [Color(0.78, 0.68, 0.5), Color(0.62, 0.52, 0.36), Color(0.47, 0.38, 0.26)],
+	"foret": [Color(0.32, 0.38, 0.22), Color(0.2, 0.26, 0.14), Color(0.4, 0.32, 0.2)],
+	"marine": [Color(0.24, 0.32, 0.45), Color(0.14, 0.19, 0.28), Color(0.42, 0.5, 0.6)],
+	"tigre": [Color(0.9, 0.5, 0.12), Color(0.08, 0.07, 0.06), Color(0.95, 0.75, 0.4)],
+}
+static var _camo_tex := {}
+
+
+## Texture procédurale d'un camouflage (bruit seuillé en trois couleurs franches).
+static func camo_texture(c: String) -> Texture2D:
+	if _camo_tex.has(c):
+		return _camo_tex[c]
+	var cols: Array = CAMO_TEINTES[c]
+	var noise := FastNoiseLite.new()
+	noise.seed = hash(c)
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.035 if c != "tigre" else 0.05
+	noise.fractal_octaves = 2
+	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
+	for y in 128:
+		for x in 128:
+			var v: float
+			if c == "tigre":
+				v = noise.get_noise_2d(x * 0.35, y * 2.2)   # étiré : des bandes
+			else:
+				v = noise.get_noise_2d(x, y)
+			var k := 0 if v < -0.12 else (1 if v < 0.18 else 2)
+			img.set_pixel(x, y, cols[k])
+	var tex := ImageTexture.create_from_image(img)
+	_camo_tex[c] = tex
+	return tex
+
+
+## Matériau du corps d'une arme avec un camouflage.
+static func camo_mat(c: String) -> StandardMaterial3D:
+	if c == "or":
+		return _mat(Color(0.95, 0.74, 0.3), 0.95, 0.22, Color(1.0, 0.75, 0.3), 0.08)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = camo_texture(c)
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(3.0, 3.0, 3.0)
+	m.roughness = 0.65
+	m.metallic = 0.15
+	return m
+
+
+static func materiaux(rarete: int, camo := "") -> Dictionary:
+	if camo != "" and (CAMO_TEINTES.has(camo) or camo == "or"):
+		var key := "%d|%s" % [rarete, camo]
+		if not _mats.has(key):
+			var base: Dictionary = materiaux(rarete).duplicate()
+			var body := camo_mat(camo)
+			var shade := camo_mat(camo)
+			shade.albedo_color = Color(0.62, 0.62, 0.62)
+			base.metal = body
+			base.wood = body
+			base.dark = shade
+			_mats[key] = base
+		return _mats[key]
 	if _mats.has(rarete):
 		return _mats[rarete]
 	var tint: Color = RARETES[rarete].couleur

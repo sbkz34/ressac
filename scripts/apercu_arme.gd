@@ -70,13 +70,21 @@ static func menu_mats() -> Dictionary:
 ## Montre une arme (avec ses accessoires).
 func montrer(w: Dictionary) -> void:
 	var acc: Array = w.get("acc", [])
-	var key := "%s|%s" % [w.get("id", ""), ",".join(PackedStringArray(acc))]
+	var camo := String(w.get("camo", Progression.camo(String(w.get("id", "")))))
+	var key := "%s|%s|%s" % [w.get("id", ""), ",".join(PackedStringArray(acc)), camo]
 	if key == _key:
 		return
 	_key = key
 	if _model:
 		_model.queue_free()
-	_model = GunShapes.build_model(String(w.get("id", "p9")), menu_mats(), 1.0, acc)
+	var mats := menu_mats()
+	if camo != "":
+		mats = mats.duplicate()
+		mats.metal = Armes.camo_mat(camo)
+		mats.wood = mats.metal
+		mats.dark = Armes.camo_mat(camo)
+		mats.dark.albedo_color = Color(0.62, 0.62, 0.62)
+	_model = GunShapes.build_model(String(w.get("id", "p9")), mats, 1.0, acc)
 	_pivot.add_child(_model)
 	var box := AABB()
 	var first := true

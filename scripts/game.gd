@@ -27,6 +27,7 @@ var settings := {
 	"sens_touch": 1.0,
 	"sens_mouse": 1.0,
 	"show_fps": true,
+	"mesures": false,
 	"bots": 15,             # adversaires dans une partie (0 à 23)
 	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
 	"qualite": 1,           # 0 performance, 1 équilibrée, 2 qualité (résolution 3D, ombres)

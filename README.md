@@ -96,6 +96,25 @@ respire au repos et tressaute de côté au tir.
 |---|---|
 | ![Caméra de la mort](docs/captures/48_camera_mort.jpg) | |
 
+### Progression
+
+Chaque partie rapporte de l'**expérience** (éliminations, tirs à la tête, contrats, coffres, temps
+de jeu, classement) et fait monter de **niveau** (55 niveaux). Dix **défis à paliers** (parties,
+éliminations, tirs à la tête, dégâts, contrats, coffres, victoires, top 5, explosifs,
+tyroliennes) en rapportent davantage. Les **camouflages** se débloquent arme par arme avec les
+éliminations (Sable 5, Forêt 15, Marine 30, Tigre 60, Or 100) et se voient en main et dans les
+menus. L'écran Progression du lobby montre les défis, les camouflages (aperçu 3D) et les
+**statistiques** détaillées (précision, ratio, tirs à la tête, meilleure série, armes favorites).
+L'écran de fin détaille l'expérience gagnée.
+
+Réglages › Affichage › **Mesures de performances** : temps d'une image, du jeu, du rendu et de la
+carte graphique, appels de dessin, objets, triangles et mémoire, en direct.
+
+| | |
+|---|---|
+| ![Fin de partie et expérience](docs/captures/37_fin.jpg) | ![Défis](docs/captures/49_defis.jpg) |
+| ![Camouflages](docs/captures/49b_camouflages.jpg) | ![Statistiques](docs/captures/49c_statistiques.jpg) |
+
 ### Classes, commandes et réglages
 
 Au lobby, l'écran **Classes** montre les 5 classes avec le rendu de leurs armes (les vrais
