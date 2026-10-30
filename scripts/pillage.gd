@@ -22,6 +22,7 @@ var chests: Array[Coffre] = []
 var targets: Array[Cible] = []
 var shops: Array[Node3D] = []   # stations d'achat de l'île (interactives)
 var contrats: Array = []          # tablettes de contrat (contrats.gd)
+var tyroliennes: Array[Node3D] = []   # points d'accroche des tyroliennes (tyrolienne.gd)
 
 
 func _pick_weighted(weights: Array) -> int:
@@ -157,6 +158,15 @@ func populate(ile: Ile, seed_value: int) -> void:
 			c.set_meta("etoiles", stars)
 			c.opened.connect(_on_chest_opened)
 			chests.append(c)
+	# Un coffre au sommet de chaque tyrolienne.
+	for t in ile.tyroliennes:
+		var c := Coffre.new()
+		add_child(c)
+		c.global_position = t.coffre
+		c.rotation.y = t.coffre_cap
+		c.set_meta("etoiles", 3)
+		c.opened.connect(_on_chest_opened)
+		chests.append(c)
 
 
 ## Pose un emplacement sur la surface juste en dessous (ou rien s'il est au-dessus du vide).

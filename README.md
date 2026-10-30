@@ -65,6 +65,19 @@ secondes d'alerte au sol.
 |---|---|
 | ![Tablette de contrat](docs/captures/43_tablette.jpg) | ![Carte : contrat, ennemis révélés, frappe](docs/captures/44_carte_contrat.jpg) |
 
+### Tyroliennes
+
+Trois **tyroliennes** montent au sommet des points hauts : la galerie du **Phare** (46 m), une
+vigie ajoutée en haut du mât du **Sémaphore** et le toit de la **Citerne**. On s'accroche au pied
+(interaction) pour monter, en haut pour redescendre ; on peut tirer pendant le trajet, et sauter
+lâche le câble (assez haut, on ouvre le parachute). Un coffre attend à chaque sommet. Les bots
+s'en servent aussi : les tyroliennes sont des liens du maillage de navigation, ils montent
+chercher le coffre ou guetter un moment, puis redescendent.
+
+| | |
+|---|---|
+| ![Tyrolienne du Phare](docs/captures/45_tyrolienne.jpg) | ![Au sommet du Phare](docs/captures/47_sommet_phare.jpg) |
+
 ### Classes, commandes et réglages
 
 Au lobby, l'écran **Classes** montre les 5 classes avec le rendu de leurs armes (les vrais

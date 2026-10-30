@@ -51,6 +51,16 @@ func _ready() -> void:
 	pillage.name = "Pillage"
 	add_child(pillage)
 	pillage.shops.assign(ile.shops)
+	for t in ile.tyroliennes:
+		pillage.tyroliennes.append(t.ancre_bas)
+		pillage.tyroliennes.append(t.ancre_haut)
+		# Lien de navigation : les bots passent par la tyrolienne pour monter ou descendre.
+		var link := NavigationLink3D.new()
+		link.bidirectional = true
+		nav.add_child(link)
+		link.global_position = Vector3.ZERO
+		link.start_position = t.bas
+		link.end_position = t.haut
 	player.arsenal.pillage = pillage
 	player.sante.died.connect(_on_player_died)
 	hud = Hud.new()
@@ -1038,6 +1048,93 @@ func _check() -> void:
 	get_tree().quit(0 if _errors.is_empty() else 1)
 
 
+## Tyroliennes : posées au sol et sur une plateforme, le joueur monte et descend, lâche le câble ;
+## un bot qui veut aller au sommet passe par la tyrolienne (lien de navigation).
+func _check_tyroliennes() -> String:
+	if ile.tyroliennes.size() != 3 or pillage.tyroliennes.size() != 6:
+		_fail("tyroliennes : %d" % ile.tyroliennes.size())
+		return ""
+	for t in ile.tyroliennes:
+		var g := ile.ground_at(t.bas.x, t.bas.z)
+		var top := ile.ground_at(t.haut.x, t.haut.z, t.haut.y + 1.5)
+		var chest := ile.ground_at(t.coffre.x, t.coffre.z, t.coffre.y + 1.5)
+		if absf(g - t.bas.y) > 0.4 or g < 0.5 or absf(top - t.haut.y) > 0.35 or absf(chest - t.coffre.y) > 0.6:
+			_fail("%s : pied %.1f / sol %.1f, sommet %.1f / %.1f, coffre %.1f / %.1f" % [t.name, t.bas.y, g, t.haut.y, top, t.coffre.y, chest])
+	if not pillage.chests.any(func(c): return c.global_position.distance_to(ile.tyroliennes[0].coffre) < 0.5):
+		_fail("tyrolienne : pas de coffre au sommet")
+	_set_mode("entrainement")
+	var t: Tyrolienne = ile.tyroliennes[2]
+	var ar := player.arsenal
+	player.scripted = Intentions.new()
+	player.sante.invulnerable = true
+	player.spawn_at(t.bas + Vector3(0, 0.1, 0), 0.0)
+	player.look_at_point(t.ancre_bas.global_position)
+	await _wait(0.3)
+	if ar.target_item != t.ancre_bas or ar.interact_label() != "Tyrolienne : monter":
+		_fail("tyrolienne : pas proposée au pied (%s)" % [ar.target_item])
+	player.scripted.interact = true
+	await _wait(0.1)
+	if player.etat != Joueur.Etat.TYROLIENNE:
+		_fail("tyrolienne : on ne s'accroche pas")
+	var t_up := await _until(func(): return player.etat == Joueur.Etat.SOL, 12.0)
+	await _wait(0.3)
+	if player.global_position.distance_to(t.haut) > 1.0 or not player.is_on_floor():
+		_fail("tyrolienne : arrivée %s au lieu de %s" % [player.global_position, t.haut])
+	player.look_at_point(t.ancre_haut.global_position)
+	await _wait(0.2)
+	if ar.target_item != t.ancre_haut:
+		_fail("tyrolienne : pas proposée en haut (%s)" % [ar.target_item])
+	player.scripted.interact = true
+	await _until(func(): return player.etat == Joueur.Etat.TYROLIENNE, 1.0)
+	await _until(func(): return player.etat == Joueur.Etat.SOL, 12.0)
+	await _wait(0.3)
+	if player.global_position.distance_to(t.bas) > 1.0:
+		_fail("tyrolienne : descente arrivée %s" % [player.global_position])
+	# Lâcher le câble en montant : on retombe.
+	player.start_zip(t, true)
+	await _wait(0.9)
+	var y_drop := player.global_position.y
+	player.scripted.jump = true
+	await _wait(0.1)
+	if player.etat == Joueur.Etat.TYROLIENNE or y_drop < t.bas.y + 3.0:
+		_fail("tyrolienne : lâcher (%d, %.1f m)" % [player.etat, y_drop - t.bas.y])
+	await _until(func(): return player.is_on_floor(), 6.0)
+	player.sante.invulnerable = false
+	player.sante.reset(0)
+	player.scripted = null
+	# Un bot va au sommet du Phare par la tyrolienne, guette, puis redescend.
+	var tp: Tyrolienne = ile.tyroliennes[0]
+	player.spawn_at(t.bas + Vector3(0, 0.1, 0), 0.0)
+	_spawn_bots(1, 1, 31)
+	var bz := bots[0]
+	var brain := bz.get_node("Bot") as Bot
+	var dir := (tp.bas - tp.haut)
+	dir.y = 0
+	var start := tp.bas + dir.normalized() * 12.0
+	bz.spawn_at(Vector3(start.x, ile.ground_at(start.x, start.z) + 0.1, start.z), 0.0)
+	await _wait(0.2)
+	brain._think_t = 999.0
+	brain._set_goal(tp.haut, "errance")
+	var rode := [false]
+	var t_bot := await _until(func():
+		rode[0] = rode[0] or bz.etat == Joueur.Etat.TYROLIENNE
+		return bz.global_position.distance_to(tp.haut) < 3.0 and bz.etat == Joueur.Etat.SOL, 30.0)
+	if t_bot < 0.0 or not rode[0]:
+		_fail("bot : n'atteint pas le sommet du Phare (%s, %s, %.0f m)" % [brain.state, rode[0], bz.global_position.distance_to(tp.haut)])
+	await _wait(0.5)
+	if brain._perch_t <= 0.0:
+		_fail("bot : ne guette pas en haut (%s)" % brain.state)
+	brain._perch_t = 0.0
+	brain._think_t = 999.0
+	brain._set_goal(start, "errance")
+	var down := await _until(func(): return bz.global_position.distance_to(start) < 4.0, 30.0)
+	if down < 0.0:
+		_fail("bot : ne redescend pas (%s, %.0f m)" % [brain.state, bz.global_position.distance_to(start)])
+	_clear_bots()
+	await _wait(0.1)
+	return "tyrolienne en %.1f s, bot au sommet en %.1f s" % [t_up, t_bot]
+
+
 ## Contrats (reconnaissance, trésor, prime) et séries de la boutique (drone, frappe).
 func _check_contrats() -> String:
 	await start_partie(2, 1)
@@ -1228,6 +1325,8 @@ func _check_bots() -> String:
 
 	# Contrats et séries.
 	out.append(await _check_contrats())
+	# Tyroliennes.
+	out.append(await _check_tyroliennes())
 
 	# Partie accélérée à 24 : elle va jusqu'au bout (dernier debout), sans blocage.
 	var t0 := Time.get_ticks_msec()
@@ -1729,6 +1828,24 @@ func _tour() -> void:
 	await _wait(0.3)
 	await _shot(dir, "44_carte_contrat")
 	hud.toggle_map()
+	# Tyrolienne du Phare : au pied, pendant la montée, au sommet.
+	var tz: Tyrolienne = ile.tyroliennes[0]
+	var back := Vector3(tz.bas.x - tz.haut.x, 0, tz.bas.z - tz.haut.z).normalized()
+	var foot := tz.bas + back * 9.0 + back.cross(Vector3.UP) * 3.0
+	player.spawn_at(Vector3(foot.x, ile.ground_at(foot.x, foot.z) + 0.1, foot.z), 0.0)
+	player.look_at_point(tz.bord + Vector3(0, -7.0, 0))
+	await _wait(0.5)
+	await _shot(dir, "45_tyrolienne")
+	player.spawn_at(tz.bas + Vector3(0, 0.1, 0), 0.0)
+	player.start_zip(tz, true)
+	await _wait(1.1)
+	player.look_at_point(tz.bord + Vector3(0, 1.5, 0))
+	await _shot(dir, "46_tyrolienne_montee", 2)
+	await _until(func(): return player.etat == Joueur.Etat.SOL, 8.0)
+	var outward := Vector3(tz.haut.x - ile.lantern.global_position.x, 0, tz.haut.z - ile.lantern.global_position.z).normalized()
+	player.look_at_point(tz.haut + outward.rotated(Vector3.UP, 0.9) * 40.0 + Vector3(0, -14.0, 0))
+	await _wait(0.4)
+	await _shot(dir, "47_sommet_phare")
 	show_lobby()
 	player.scripted = null
 	get_tree().quit()

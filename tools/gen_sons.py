@@ -4,7 +4,7 @@
 Pas sur la terre, sur un sol dur et dans l'eau (plusieurs variantes, plus naturels que l'ancien
 « step »), vent de chute libre et sous la voile, ouverture du parachute, sortie de l'avion, moteur
 de l'avion, entrée dans l'eau et brasse, marqueurs de touche (corps, tête, armure, armure brisée),
-battements de cœur quand on est à bout de forces.
+battements de cœur quand on est à bout de forces, tyrolienne.
 
     python3 tools/gen_sons.py        → assets/sfx/*.wav
 """
@@ -199,3 +199,17 @@ write("armure_brisee.wav", place(d, [(0.0, crack, 1.0), (0.0, crunch, 0.8), (0.0
 d = 0.9
 beat = lambda: low(np.sin(2 * np.pi * 52 * t(0.18)) * env(0.18, 0.006, 0.05) + low(white(0.18), 120) * env(0.18, 0.004, 0.03) * 0.5, 180)
 write("coeur.wav", place(d, [(0.0, beat(), 1.0), (0.24, beat(), 0.7)]), peak=0.8)
+
+# Tyrolienne : la poulie qui file sur le câble (sifflement métallique qui monte, cliquetis),
+# puis l'arrivée (choc sourd).
+d = 2.8
+tt = t(d)
+f = 520 + 260 * np.clip(tt / 0.6, 0, 1)
+whine = np.sin(2 * np.pi * np.cumsum(f) / SR) * 0.35 + np.sin(2 * np.pi * np.cumsum(f * 2.01) / SR) * 0.15
+whine *= 0.6 + 0.4 * np.sin(2 * np.pi * 7.0 * tt)
+rattle = band(white(d), 1800, 5000) * (0.5 + 0.5 * (np.sin(2 * np.pi * 23.0 * tt) > 0.6))
+hiss = band(white(d), 300, 1500) * 0.6
+body = (whine + rattle * 0.35 + hiss) * np.clip(tt / 0.15, 0, 1) * np.clip((d - tt) / 0.5, 0, 1)
+dd = 0.35
+clunk = low(white(dd), 400) * env(dd, 0.002, 0.08) * 1.6 + np.sin(2 * np.pi * 140 * t(dd)) * env(dd, 0.001, 0.06)
+write("tyrolienne.wav", place(d + 0.4, [(0.0, body, 0.8), (d - 0.15, clunk, 1.0)]), peak=0.6)

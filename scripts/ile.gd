@@ -15,6 +15,7 @@ var sun: DirectionalLight3D
 var env: Environment
 var shops: Array[Node3D] = []
 var lantern: Node3D
+var tyroliennes: Array[Tyrolienne] = []
 var stats := {"batiments": 0, "rampes": 0}
 ## Emplacements de butin par lieu, relevés pendant la construction : {id du lieu: [Vector3]}.
 var loot_spots := {}
@@ -303,7 +304,7 @@ func _build_lieu(l: Dictionary) -> void:
 			"bunker": _bunker(node, b)
 			"phare": _phare(node, b)
 			"mat": _mat(node, b)
-			"citerne": _citerne(node)
+			"citerne": _citerne(node, b)
 			"cheminee": _cheminee(node, b)
 			"quai": _quai(node, b, float(l.h))
 			"grue": _grue(node)
@@ -531,7 +532,7 @@ func _phare(node: Node3D, b: Dictionary) -> void:
 	box(node, Vector3(0, 1.2, 3.35), Vector3(1.3, 2.4, 0.2), mats.volet_vert, false)
 	# Galerie et lanterne.
 	cylinder(node, Vector3(0, h + 0.15, 0), 3.6, 0.3, mats.metal)
-	cylinder(node, Vector3(0, h + 1.4, 0), 1.6, 2.2, mats.vitre, false, 1.6, 12)
+	cylinder(node, Vector3(0, h + 1.4, 0), 1.6, 2.2, mats.vitre, true, 1.6, 12)
 	cylinder(node, Vector3(0, h + 2.9, 0), 1.8, 0.8, mats.rouge, false, 0.3, 12)
 	for i in 12:
 		var a := TAU * i / 12.0
@@ -544,6 +545,8 @@ func _phare(node: Node3D, b: Dictionary) -> void:
 	l.position = Vector3(0, h + 1.4, 0)
 	lantern = node
 	_spot(node, Vector3(0, 0.02, 4.6))
+	if b.has("tyro"):
+		_tyrolienne(node, b.tyro, 8.0, 4.4, 2.6, h + 0.3, 2.6)
 
 
 func _mat(node: Node3D, b: Dictionary) -> void:
@@ -561,20 +564,48 @@ func _mat(node: Node3D, b: Dictionary) -> void:
 		y += 3.0
 	box(node, Vector3(0, h + 0.3, 0), Vector3(0.3, 0.6, 0.3), mats.ecran, false)
 	_spot(node, Vector3(2.2, 0.02, 0))
+	if b.has("tyro"):
+		# Vigie au sommet du mât : plateforme et garde-corps.
+		box(node, Vector3(0, h, 0), Vector3(3.8, 0.3, 3.8), mats.metal)
+		for k in 4:
+			var side := Vector3(1.85, 0, 0).rotated(Vector3.UP, k * PI / 2)
+			var rail := box(node, Vector3(side.x, h + 1.05, side.z), Vector3(0.06, 0.06, 3.8), mats.rouge, false)
+			rail.rotation.y = k * PI / 2
+		_tyrolienne(node, b.tyro, 7.0, 2.5, 1.0, h + 0.15, 1.1)
 
 
-func _citerne(node: Node3D) -> void:
+func _citerne(node: Node3D, b: Dictionary) -> void:
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
 			box(node, Vector3(sx * 3.0, 6.5, sz * 3.0), Vector3(0.5, 13.0, 0.5), mats.concrete)
 	box(node, Vector3(0, 6.0, 0), Vector3(6.2, 0.25, 0.25), mats.concrete, false)
 	box(node, Vector3(0, 6.0, 0), Vector3(0.25, 0.25, 6.2), mats.concrete, false)
 	cylinder(node, Vector3(0, 15.5, 0), 5.0, 5.0, mats.concrete, true, 5.0, 20)
-	cylinder(node, Vector3(0, 18.6, 0), 5.2, 1.2, mats.dalle, false, 1.0, 20)
+	# Toit plat (on peut y monter par la tyrolienne), petit dôme au milieu.
+	cylinder(node, Vector3(0, 18.15, 0), 5.3, 0.3, mats.dalle, true, 5.3, 20)
+	cylinder(node, Vector3(0, 18.8, 0), 1.7, 1.0, mats.dalle, true, 0.5, 14)
 	# Échelle (décor).
 	for i in 20:
 		box(node, Vector3(3.3, 0.6 * i + 0.4, 3.3), Vector3(0.5, 0.05, 0.05), mats.metal, false)
 	_spot(node, Vector3(0, 0.02, 0))
+	if b.has("tyro"):
+		_tyrolienne(node, b.tyro, 10.0, 5.9, 3.6, 18.3, 3.4)
+
+
+## Tyrolienne du sol (à `r_sol` du pied, direction `dir` dans le repère du bâtiment) jusqu'au
+## sommet (plateforme à la hauteur `y`) ; un coffre attend en haut, de l'autre côté.
+func _tyrolienne(node: Node3D, dir_arr: Array, r_sol: float, r_bord: float, r_haut: float, y: float, r_coffre: float) -> void:
+	var dir := Vector3(float(dir_arr[0]), 0, float(dir_arr[1])).normalized()
+	var bas := node.to_global(dir * r_sol)
+	bas.y = terrain.height_at(bas.x, bas.z) + 0.02
+	var t := Tyrolienne.new()
+	t.name = "Tyrolienne%d" % tyroliennes.size()
+	add_child(t)
+	t.setup(self, bas, node.to_global(dir * r_bord + Vector3(0, y, 0)), node.to_global(dir * r_haut + Vector3(0, y, 0)))
+	var side := dir.cross(Vector3.UP)
+	t.coffre = node.to_global((-dir * 0.4 + side).normalized() * r_coffre + Vector3(0, y, 0))
+	t.coffre_cap = node.global_rotation.y + atan2(dir.x, dir.z)
+	tyroliennes.append(t)
 
 
 func _cheminee(node: Node3D, b: Dictionary) -> void:

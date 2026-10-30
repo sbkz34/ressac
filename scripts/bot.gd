@@ -50,6 +50,8 @@ var _pi := 0
 var _path_goal := Vector3(INF, 0, 0)
 var _repath_t := 0.0
 var _think_t := 0.0
+var _perch_t := 0.0     # en haut d'une tyrolienne : on guette un moment
+var _perch_yaw := 0.0
 var _perceive_t := 0.0
 var _stuck_t := 0.0
 var _stuck_pos := Vector3.ZERO
@@ -139,6 +141,9 @@ func _physics_process(delta: float) -> void:
 		_:
 			_drop_set = false
 			_ground(delta)
+	if j.etat == Joueur.Etat.TYROLIENNE:
+		i.jump = false      # sauter lâcherait le câble
+		i.crouch = false
 
 
 ## Dans l'avion : on saute au plus près du lieu choisi.
@@ -209,8 +214,16 @@ func _ground(delta: float) -> void:
 		_combat(delta, in_danger)
 	elif _target and _target_seen_t < 7.0 and not in_danger:
 		_pursue(delta)
+	elif _perch_t > 0.0 and not in_danger:
+		_target = null
+		_perch_t -= delta
+		state = "perchoir"
+		_perch_yaw += delta * 0.5
+		var p := j.global_position
+		_face(p + Vector3(sin(_perch_yaw), 0, cos(_perch_yaw)) * 10.0 + Vector3(0, Joueur.EYES[j.posture] - 1.5, 0), delta, false)
 	else:
 		_target = null
+		_perch_t = 0.0
 		_think_t -= delta
 		if _think_t <= 0.0 or (_goal_kind == "" and _think_t < 0.5):
 			_think_t = 0.8
@@ -337,6 +350,13 @@ func _errand(delta: float) -> void:
 				_goal_kind = ""
 		"achat":
 			_buy_at(_goal_node)
+			_goal_kind = ""
+		"errance":
+			if ile:
+				for t in ile.tyroliennes:
+					if p.distance_to(t.haut) < 3.0:
+						_perch_t = rng.randf_range(8.0, 16.0)
+						_perch_yaw = j.rotation.y
 			_goal_kind = ""
 		_:
 			_goal_kind = ""
@@ -684,6 +704,8 @@ func _follow(to: Vector3, delta: float, reach: float, sprint: bool) -> bool:
 		_progress_t += delta
 		if _progress_t > 5.0:
 			_unreachable = true
+	if _zip_on_path(p):
+		return false
 	var next := to
 	if _path.size() >= 2:
 		while _pi < _path.size() - 1 and Vector2(_path[_pi].x - p.x, _path[_pi].z - p.z).length() < 0.8:
@@ -702,6 +724,26 @@ func _follow(to: Vector3, delta: float, reach: float, sprint: bool) -> bool:
 		if not j.sprinting and j.etat == Joueur.Etat.SOL and j.posture == Joueur.Posture.DEBOUT:
 			_i.sprint = true
 		_slide_cancel(delta, dflat)
+	return false
+
+
+## Le chemin passe par une tyrolienne (lien de navigation) et on est à son pied ou à son sommet :
+## on s'accroche.
+func _zip_on_path(p: Vector3) -> bool:
+	if ile == null or j.etat != Joueur.Etat.SOL or _path.size() < 2:
+		return false
+	for t in ile.tyroliennes:
+		for monte in [true, false]:
+			var a: Vector3 = t.bas if monte else t.haut
+			var b: Vector3 = t.haut if monte else t.bas
+			if p.distance_to(a) > 1.8:
+				continue
+			for k in range(maxi(_pi - 1, 0), _path.size()):
+				if _path[k].distance_to(b) < 1.5:
+					j.start_zip(t, monte)
+					_path = PackedVector3Array()
+					_progress_d = INF
+					return true
 	return false
 
 
@@ -839,6 +881,12 @@ func _pick_drop() -> Vector3:
 func _pick_wander() -> Vector3:
 	var lieux: Array = G.data.get("lieux", [])
 	var p := j.global_position
+	# De temps en temps : grimper à une tyrolienne pas trop loin, pour guetter d'en haut.
+	if ile and rng.randf() < 0.25:
+		for t in ile.tyroliennes:
+			var d := Vector2(t.bas.x - p.x, t.bas.z - p.z).length()
+			if d < 160.0 and d > 20.0 and _safe(Vector2(t.haut.x, t.haut.z), 0.7) and rng.randf() < 0.6:
+				return t.haut
 	for k in 8:
 		var l: Dictionary = lieux[rng.randi_range(0, lieux.size() - 1)]
 		var c := Vector2(float(l.x), float(l.z)) + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(0.0, float(l.rayon) * 0.6)

@@ -56,7 +56,7 @@
       "id": "phare", "etiquette": [0, -24], "nom": "Le Phare", "x": -262, "z": -38, "rayon": 24, "h": 20, "sol": "dirt", "butin": 1,
       "role": "Pointe ouest isolée. Vue sur tout le flanc ouest, peu de butin.",
       "batiments": [
-        {"t": "phare", "x": 0, "z": 0, "h": 26},
+        {"t": "phare", "x": 0, "z": 0, "h": 26, "tyro": [0, -1]},
         {"t": "bat", "x": 11, "z": 7, "w": 10, "d": 8, "n": 2, "m": "enduit", "portes": ["e", "s"], "toit": true},
         {"t": "mur", "x": 4, "z": -14, "r": 0, "w": 22, "h": 1.0}
       ]
@@ -80,7 +80,7 @@
       "role": "Point le plus haut de l'île. Antenne visible de partout, position de tir dominante.",
       "batiments": [
         {"t": "bat", "x": 0, "z": 0, "w": 16, "d": 10, "n": 2, "m": "enduit", "portes": ["s", "w"], "toit": true},
-        {"t": "mat", "x": 14, "z": -9, "h": 30},
+        {"t": "mat", "x": 14, "z": -9, "h": 30, "tyro": [1, 0]},
         {"t": "bat", "x": -13, "z": 10, "w": 6, "d": 5, "n": 1, "m": "concrete", "portes": ["e"], "toit": false}
       ]
     },
@@ -88,7 +88,7 @@
       "id": "citerne", "etiquette": [0, 21], "nom": "La Citerne", "x": 80, "z": -50, "rayon": 24, "h": 18, "sol": "dirt", "butin": 1,
       "role": "Château d'eau et station de pompage entre le Lazaret et le Sémaphore. Carrefour.",
       "batiments": [
-        {"t": "citerne", "x": 0, "z": 0},
+        {"t": "citerne", "x": 0, "z": 0, "tyro": [-1, 0]},
         {"t": "bat", "x": 13, "z": 7, "w": 10, "d": 8, "n": 1, "fh": 4.0, "m": "brick", "portes": ["w", "s"], "toit": false},
         {"t": "conteneur", "x": -12, "z": 8, "r": 70, "n": 1},
         {"t": "conteneur", "x": -9, "z": -12, "r": 10, "n": 2}

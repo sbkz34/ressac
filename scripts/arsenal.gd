@@ -160,7 +160,7 @@ func other() -> Dictionary:
 func can_use_weapon() -> bool:
 	if joueur.swimming or joueur.is_drone():
 		return false
-	return joueur.etat in [Joueur.Etat.SOL, Joueur.Etat.GLISSADE, Joueur.Etat.PARACHUTE]
+	return joueur.etat in [Joueur.Etat.SOL, Joueur.Etat.GLISSADE, Joueur.Etat.PARACHUTE, Joueur.Etat.TYROLIENNE]
 
 
 ## Multiplicateur de vitesse de déplacement (arme en main, visée, plaque).
@@ -444,6 +444,12 @@ func _find_interactable() -> Node3D:
 			if score < best_score:
 				best_score = score
 				best = t
+	if joueur.etat == Joueur.Etat.SOL:
+		for an in pillage.tyroliennes:
+			var score := _reach_score(p, fwd, an.global_position) * 1.1
+			if score < best_score:
+				best_score = score
+				best = an
 	for st in pillage.shops:
 		var score := _reach_score(p, fwd, st.global_position + Vector3(0, 0.6, 0)) * 0.9
 		if score < best_score:
@@ -477,6 +483,8 @@ func interact_label() -> String:
 		return "Station d'achat"
 	if target_item and target_item.is_in_group("contrat"):
 		return target_item.call("label")
+	if target_item and target_item.has_meta("tyrolienne"):
+		return "Tyrolienne : monter" if target_item.get_meta("monte") else "Tyrolienne : descendre"
 	return ""
 
 
@@ -495,6 +503,9 @@ func _interact(t: Node3D) -> void:
 		return
 	if t.is_in_group("contrat"):
 		contract_requested.emit(t)
+		return
+	if t.has_meta("tyrolienne"):
+		joueur.start_zip(t.get_meta("tyrolienne"), bool(t.get_meta("monte")))
 		return
 	var b := t as Butin
 	var w := b.arme.duplicate()

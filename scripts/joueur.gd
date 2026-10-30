@@ -11,7 +11,7 @@ extends CharacterBody3D
 signal state_changed(etat: int)
 signal landed
 
-enum Etat { SOL, GLISSADE, ESCALADE, CHUTE_LIBRE, PARACHUTE, AVION, DRONE }
+enum Etat { SOL, GLISSADE, ESCALADE, CHUTE_LIBRE, PARACHUTE, AVION, DRONE, TYROLIENNE }
 enum Posture { DEBOUT, ACCROUPI, COUCHE }
 
 # Vitesses (m/s). Marche et sprint reprennent Dernière Vague.
@@ -64,6 +64,9 @@ const HEIGHTS := {Posture.DEBOUT: 1.8, Posture.ACCROUPI: 1.2, Posture.COUCHE: 0.
 const EYES := {Posture.DEBOUT: 1.6, Posture.ACCROUPI: 1.05, Posture.COUCHE: 0.45}
 
 var etat: int = Etat.SOL
+var _zip_pts := PackedVector3Array()   # tyrolienne : trajet (pieds) et distance parcourue
+var _zip_s := 0.0
+var _zip_up := true
 var posture: int = Posture.DEBOUT
 var sprinting := false
 var swimming := false
@@ -188,7 +191,7 @@ func _set_etat(e: int) -> void:
 		return
 	etat = e
 	canopy.visible = e == Etat.PARACHUTE
-	collision_mask = 0 if e == Etat.DRONE or e == Etat.ESCALADE or e == Etat.AVION else G.L_WORLD
+	collision_mask = 0 if e == Etat.DRONE or e == Etat.ESCALADE or e == Etat.AVION or e == Etat.TYROLIENNE else G.L_WORLD
 	state_changed.emit(e)
 
 
@@ -395,6 +398,7 @@ func _physics_process(delta: float) -> void:
 		Etat.ESCALADE: _sim_escalade(delta)
 		Etat.DRONE: _sim_drone(i, delta)
 		Etat.GLISSADE: _sim_glissade(i, delta)
+		Etat.TYROLIENNE: _sim_tyrolienne(i, delta)
 		_: _sim_sol(i, delta)
 	arsenal.simulate(i, delta)
 	if _snap != Vector2.ZERO:
@@ -744,6 +748,70 @@ func _sim_escalade(delta: float) -> void:
 
 
 # ------------------------------------------------------------------------------------------------
+# Tyrolienne
+# ------------------------------------------------------------------------------------------------
+func start_zip(t: Tyrolienne, monte: bool) -> void:
+	if etat != Etat.SOL:
+		return
+	_zip_pts = t.trajet(monte)
+	_zip_s = 0.0
+	_zip_up = monte
+	sprinting = false
+	_end_tac()
+	_set_posture(Posture.DEBOUT, true)
+	velocity = Vector3.ZERO
+	_set_etat(Etat.TYROLIENNE)
+	_snd("tyrolienne", -8.0, 1.0 if monte else 1.12)
+
+
+func is_zipping() -> bool:
+	return etat == Etat.TYROLIENNE
+
+
+## Le long du câble (le premier ou le dernier petit segment, sur la plateforme, plus lentement).
+## Sauter lâche le câble.
+func _sim_tyrolienne(i: Intentions, delta: float) -> void:
+	var a := _zip_pts[0]
+	var cable_from := 1 if _zip_up else 2      # segment du câble : bas→bord (montée) ou bord→bas
+	var seg := 0
+	var acc := 0.0
+	var s := _zip_s
+	while seg < _zip_pts.size() - 2 and s > _zip_pts[seg].distance_to(_zip_pts[seg + 1]):
+		s -= _zip_pts[seg].distance_to(_zip_pts[seg + 1])
+		acc += _zip_pts[seg].distance_to(_zip_pts[seg + 1])
+		seg += 1
+	var on_cable := (seg + 1) == cable_from
+	var speed := (Tyrolienne.VITESSE_MONTEE if _zip_up else Tyrolienne.VITESSE_DESCENTE) if on_cable else Tyrolienne.VITESSE_BORD
+	if on_cable:
+		speed *= clampf(0.35 + s / 4.0, 0.35, 1.0)    # démarrage
+	var dir := (_zip_pts[seg + 1] - _zip_pts[seg]).normalized()
+	if i.jump and on_cable:
+		_set_etat(Etat.SOL)
+		velocity = Vector3(dir.x, 0, dir.z) * speed * 0.6
+		_air_t = 1.0
+		return
+	_zip_s += speed * delta
+	var total := 0.0
+	for k in _zip_pts.size() - 1:
+		total += _zip_pts[k].distance_to(_zip_pts[k + 1])
+	if _zip_s >= total:
+		global_position = _zip_pts[-1] + Vector3(0, 0.05, 0)
+		velocity = Vector3.ZERO
+		_set_etat(Etat.SOL)
+		return
+	var p := a
+	var left := _zip_s
+	for k in _zip_pts.size() - 1:
+		var l := _zip_pts[k].distance_to(_zip_pts[k + 1])
+		if left <= l:
+			p = _zip_pts[k].lerp(_zip_pts[k + 1], left / maxf(l, 0.001))
+			break
+		left -= l
+	velocity = dir * speed
+	global_position = p
+
+
+# ------------------------------------------------------------------------------------------------
 # Chute libre, parachute, avion
 # ------------------------------------------------------------------------------------------------
 ## Hauteur au-dessus du sol ou de la mer.
@@ -873,6 +941,8 @@ func _update_camera(delta: float) -> void:
 			fov += 12.0 * clampf(-velocity.y / FREE_V_MAX, 0.0, 1.0)
 		Etat.AVION:
 			fov += 4.0
+		Etat.TYROLIENNE:
+			fov += 6.0
 	if swimming:
 		eye = 1.45
 	if etat == Etat.SOL and sprinting:

@@ -388,7 +388,7 @@ func apply_volumes() -> void:
 
 ## Catégorie d'un son (pour son volume).
 static func bus_of(name: String) -> String:
-	if name.begins_with("pas_") or name in ["step", "jump_land", "brasse", "plouf"]:
+	if name.begins_with("pas_") or name in ["step", "jump_land", "brasse", "plouf", "tyrolienne"]:
 		return "Pas"
 	if name.begins_with("marque_") or name in ["killmarker", "hitmarker", "buy", "denied", "armure_brisee", "coeur",
 			"powerup_pick", "box", "perk", "round_start", "round_end"]:
