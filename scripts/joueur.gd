@@ -359,6 +359,7 @@ func _process(delta: float) -> void:
 		i.move = Vector2.ZERO
 		i.fire_held = false
 		i.ads_held = false
+		i.use_held = false
 		i.plate_held = false
 		i.jump_held = false
 		i.crouch_held = false
@@ -400,6 +401,7 @@ func _process(delta: float) -> void:
 	i.swap = i.swap or Input.is_action_just_pressed("swap")
 	i.interact = i.interact or Input.is_action_just_pressed("interact")
 	i.use = i.use or Input.is_action_just_pressed("use")
+	i.use_held = Input.is_action_pressed("use")
 	i.plate_held = Input.is_action_pressed("plate")
 	# Y : appui bref = changer d'arme (au relâchement), maintenu = poser des plaques.
 	if Input.is_action_just_pressed("arme_plaque"):

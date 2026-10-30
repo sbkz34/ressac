@@ -23,6 +23,7 @@ var respawn_open := true
 var respawn_left := -1.0           # compte à rebours du joueur (négatif : vivant)
 var time := 0.0
 var deaths := 0
+const ARGENT_GARDE := 0.4       # part de son argent qu'on garde en réapparaissant
 var stats := {}
 var _compte := false
 var _serie_n := 0
@@ -194,6 +195,8 @@ func _on_died(c: Joueur) -> void:
 			bb.kills += 1
 	killed.emit(by.nom if by else "", c.nom, cause, by == player, c == player)
 	var where := c.global_position
+	# On garde 40 % de son argent pour le redéploiement (le sac en contient la totalité).
+	inf.argent_garde = int(c.arsenal.argent * ARGENT_GARDE / 50.0) * 50
 	pillage.spawn_bag(where, c.arsenal.drop_everything())
 	c.arsenal.slots = [{}, {}]
 	c.arsenal.view.set_weapon({}, false)
@@ -230,11 +233,13 @@ func _redeploy(c: Joueur) -> void:
 			break
 	c.ui_block = false
 	c.arsenal.starting_kit()
+	c.arsenal.argent = int(info[c].get("argent_garde", 0))
+	c.arsenal.changed.emit()
 	c.start_freefall(Vector3(at.x, REDEPLOY_HEIGHT, at.y))
 	if c == player:
 		last_drop = {"center": cc, "radius": r}
 		respawn_left = -1.0
-		message.emit("Redéploiement !")
+		message.emit("Redéploiement !" if c.arsenal.argent <= 0 else "Redéploiement ! %d € conservés" % c.arsenal.argent)
 
 
 func _on_closed() -> void:

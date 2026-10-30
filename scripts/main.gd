@@ -817,8 +817,15 @@ func _check() -> void:
 	# Mort : sac au sol, compte à rebours, retour en chute libre dans la zone.
 	var items0 := pillage.items.size()
 	var dead_at := player.global_position
+	player.arsenal.argent = 1000
+	player.arsenal.plates = 0
 	player.sante.take(500.0, "torse", "brume", true)
 	await _wait(0.1)
+	# Le sac : pas de P9 de départ, au moins une plaque, l'argent ; il disparaîtra.
+	var bag_items := pillage.items.slice(items0)
+	if bag_items.any(func(b): return b.type == Butin.Type.ARME and b.arme.id == "p9") \
+			or not bag_items.any(func(b): return b.type == Butin.Type.PLAQUE) or not bag_items.all(func(b): return b.has_meta("expire")):
+		_fail("sac de mort : %s" % [bag_items.map(func(b): return b.label())])
 	if partie.respawn_left <= 0.0 or pillage.items.size() <= items0:
 		_fail("mort : réapparition %.1f s, %d objets du sac" % [partie.respawn_left, pillage.items.size() - items0])
 	await _until(func(): return partie.respawn_left < 0.0, 40.0)
@@ -826,6 +833,8 @@ func _check() -> void:
 	var back := player.global_position
 	if player.etat != Joueur.Etat.CHUTE_LIBRE or player.sante.dead or ar.current().get("id", "") != "p9":
 		_fail("réapparition : état %d, arme %s" % [player.etat, ar.current()])
+	if ar.argent != 400:
+		_fail("réapparition : %d € au lieu de 400 (40 %% de 1000)" % ar.argent)
 	if Vector2(back.x, back.z).distance_to(partie.last_drop.center) > float(partie.last_drop.radius) + 1.0:
 		_fail("réapparition hors de la zone sûre")
 	if Vector2(back.x, back.z).distance_to(Vector2(dead_at.x, dead_at.z)) < 1.0 and back.y < 100.0:
@@ -864,6 +873,7 @@ func _check() -> void:
 	# ---------------------------------------------------------------------------------------
 	await _check_manette()
 	await _check_fenetre()
+	await _check_ramasser()
 	var bot_stats := await _check_bots()
 
 	# Manette : Y maintenu pose une plaque, Y bref change d'arme (par les vraies commandes).
@@ -1141,6 +1151,53 @@ func _check_manette() -> void:
 	print("[check] manette : %.0f puis %.0f °/s au bord, écart en strafant %.1f° sans assistance, %.1f° avec" % [rad_to_deg(early), rad_to_deg(late), err[0], err[1]])
 
 
+## Manette : X bref recharge même avec une arme au sol devant soi ; X maintenu la ramasse.
+## Fins de partie : jamais deux fois de suite au même endroit.
+func _check_ramasser() -> void:
+	_set_mode("entrainement")
+	_spawn_at_range()
+	var ar := player.arsenal
+	player.scripted = Intentions.new()
+	ar.slots = [Armes.nouvelle("faucon", 0, []), {}]
+	ar.cur = 0
+	ar.reserve["fusil"] = 120
+	ar.slots[0].chargeur = 5
+	ar.view.set_weapon(ar.current(), false)
+	var fwd := -player.global_basis.z
+	var gun := pillage.spawn(Butin.make_arme(Armes.nouvelle("vipere", 1, [])), player.global_position + Vector3(fwd.x, 0, fwd.z) * 1.0 + Vector3(0, 0.05, 0))
+	player.look_at_point(gun.global_position)
+	await _wait(0.5)
+	if ar.target_item != gun:
+		_fail("ramasser : arme pas visée (%s)" % [ar.target_item])
+	player.scripted.use = true
+	player.scripted.use_held = true
+	await _wait(0.1)
+	player.scripted.use_held = false
+	await _wait(0.1)
+	if not ar.reloading or not pillage.items.has(gun):
+		_fail("X bref : rechargement %s, arme ramassée %s" % [ar.reloading, not pillage.items.has(gun)])
+	await _wait(2.5)
+	player.scripted.use = true
+	player.scripted.use_held = true
+	await _wait(0.45)
+	player.scripted.use_held = false
+	await _wait(0.1)
+	if pillage.items.has(gun) or ar.current().id != "vipere":
+		_fail("X maintenu : arme pas ramassée (%s)" % ar.current().id)
+	player.scripted = null
+	var finals := []
+	for k in 12:
+		var br := Brume.new()
+		add_child(br)
+		br.start(1000 + k)
+		finals.append(br.final_place)
+		br.queue_free()
+	for k in range(1, finals.size()):
+		if finals[k] == finals[k - 1]:
+			_fail("fin de partie deux fois de suite : %s" % finals[k])
+	print("[check] ramasser / recharger, fins : %s" % ", ".join(PackedStringArray(finals)))
+
+
 ## Fenêtres : face à une fenêtre du rez-de-chaussée (maison du Phare), saut = on la franchit, on se
 ## retrouve dedans ; puis on ressort par la même. Face à un mur plein, rien.
 func _check_fenetre() -> void:
@@ -1218,7 +1275,7 @@ func _check_fenetre() -> void:
 	await _until(func(): return lg.can_open(), 12.0)
 	lg.open_chest()
 	await _wait(2.2)
-	if is_instance_valid(lg) or pillage.chests.has(lg):
+	if is_instance_valid(lg) or pillage.chests.any(func(c): return not is_instance_valid(c)):
 		_fail("largage ouvert toujours là")
 	# Viseurs : un point rouge, pas une barre sur toute la largeur de l'arme.
 	for v in ["point_rouge", "holo"]:

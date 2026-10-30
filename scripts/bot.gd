@@ -878,8 +878,17 @@ func _pick_drop() -> Vector3:
 		if not _safe(c, 0.9):
 			continue
 		pool.append(l)
-		# Les lieux riches attirent, mais on évite d'y sauter tous ensemble.
-		weights.append((1.0 + float(l.get("butin", 1))) / (1.0 + 1.5 * int(_drops.get(l.id, 0))))
+		# Les lieux riches attirent, mais on évite d'y sauter tous ensemble, et (au redéploiement)
+		# les lieux où l'on se bat déjà ; on préfère ce qui est proche.
+		var w := (1.0 + float(l.get("butin", 1))) / (1.0 + 1.5 * int(_drops.get(l.id, 0)))
+		if partie and j.etat != Joueur.Etat.AVION and partie.time > 5.0:
+			var occ := 0
+			for cb in partie.combatants:
+				if cb != j and partie.is_alive(cb) and Vector2(cb.global_position.x - c.x, cb.global_position.z - c.y).length() < float(l.rayon) + 25.0:
+					occ += 1
+			var dist := Vector2(j.global_position.x - c.x, j.global_position.z - c.y).length()
+			w = w / (1.0 + 1.2 * occ) * exp(-dist / 220.0)
+		weights.append(w)
 	if pool.is_empty():
 		var b := partie.brume if partie else null
 		var c2 := b.next_center if b else Vector2.ZERO

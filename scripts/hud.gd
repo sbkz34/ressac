@@ -1137,6 +1137,10 @@ func _process(delta: float) -> void:
 	if a.target_item:
 		tl["action"] = "OUVRIR" if a.target_item is Coffre else "PRENDRE"
 		var k := key_name("interact")
+		if G.input_mode == "pad" and a.target_item is Butin:
+			k = "Maintenir %s" % k
+			if a._use_t > 0.0 and not a._use_done:
+				k += " " + "▮".repeat(int(clampf(a._use_t / Arsenal.USE_HOLD, 0.0, 1.0) * 5.0)) + "▯".repeat(5 - int(clampf(a._use_t / Arsenal.USE_HOLD, 0.0, 1.0) * 5.0))
 		_prompt.text = "%s : %s" % [k, a.interact_label()]
 	else:
 		_prompt.text = ""

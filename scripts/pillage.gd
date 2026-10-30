@@ -104,6 +104,8 @@ func clear() -> void:
 
 
 ## Sac de butin à la mort : armes, munitions, plaques et argent répandus au sol.
+## Le pistolet de départ n'y est pas (sinon l'île se couvre de P9) ; il y a toujours au moins une
+## plaque (une élimination rapporte de quoi se ressouder). Ce butin disparaît au bout de 2 min.
 func spawn_bag(at: Vector3, bag: Dictionary) -> void:
 	var p = _settle(at + Vector3(0, 1.0, 0))
 	var base: Vector3 = p if p != null else at
@@ -112,15 +114,35 @@ func spawn_bag(at: Vector3, bag: Dictionary) -> void:
 		counter[0] += 1
 		var k: int = counter[0]
 		return base + Vector3.FORWARD.rotated(Vector3.UP, k * 1.3) * (0.6 + 0.25 * k)
+	var dropped: Array[Butin] = []
 	for w in bag.armes:
-		spawn(Butin.make_arme(w), spot.call(), rng.randf() * TAU)
+		if String(w.id) == "p9" and int(w.get("rarete", 0)) == 0:
+			continue
+		dropped.append(spawn(Butin.make_arme(w), spot.call(), rng.randf() * TAU))
 	for kind in bag.munitions:
 		if int(bag.munitions[kind]) > 0:
-			spawn(Butin.make_munitions(kind, int(bag.munitions[kind])), spot.call(), rng.randf() * TAU)
-	if int(bag.plaques) > 0:
-		spawn(Butin.make_plaque(int(bag.plaques)), spot.call())
+			dropped.append(spawn(Butin.make_munitions(kind, int(bag.munitions[kind])), spot.call(), rng.randf() * TAU))
+	dropped.append(spawn(Butin.make_plaque(maxi(int(bag.plaques), 1)), spot.call()))
 	if int(bag.argent) > 0:
-		spawn(Butin.make_argent(int(bag.argent)), spot.call())
+		dropped.append(spawn(Butin.make_argent(int(bag.argent)), spot.call()))
+	var until := Time.get_ticks_msec() / 1000.0 + BAG_LIFE
+	for b in dropped:
+		b.set_meta("expire", until)
+
+
+const BAG_LIFE := 120.0
+var _expire_t := 0.0
+
+
+func _process(delta: float) -> void:
+	_expire_t += delta
+	if _expire_t < 2.0:
+		return
+	_expire_t = 0.0
+	var now := Time.get_ticks_msec() / 1000.0
+	for b in items.duplicate():
+		if is_instance_valid(b) and b.has_meta("expire") and now > float(b.get_meta("expire")):
+			remove(b)
 
 
 ## Caisse de largage de classe qui descend du ciel à cet endroit.

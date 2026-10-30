@@ -18,6 +18,7 @@ var reload := false
 var swap := false
 var interact := false
 var use := false              # manette : ramasser s'il y a quelque chose, sinon recharger
+var use_held := false         # manette : maintenu pour ramasser une arme (appui bref = recharger)
 var plate_held := false
 var lethal := false           # lancer la grenade
 var tactical := false         # lancer le fumigène

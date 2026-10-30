@@ -145,6 +145,14 @@ les armes de classe ceux choisis à l'**armurier** (aperçu 3D et comparaison en
 voient sur les armes, en main, au sol et chez les bots.
 
 Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi).
+**X appuyé** recharge (ou ouvre un coffre, une station, une tablette, une tyrolienne), **X maintenu**
+ramasse l'arme au sol devant soi : une arme par terre n'empêche plus de recharger.
+
+Mort et redéploiement : le sac laissé au sol contient toujours au moins une plaque (une
+élimination rapporte de quoi se refaire), jamais le P9 de départ, et disparaît au bout de 2 min.
+On réapparaît avec 40 % de l'argent qu'on avait. Les bots redéployés évitent les lieux où l'on se
+bat déjà et préfèrent ceux qui sont proches. La partie finit dans l'un de 9 lieux (le Lazaret plus
+rarement), jamais deux fois de suite au même endroit.
 
 **Visée à la manette** : la vue est tournée et la caméra placée à chaque image (et non au rythme
 de la physique, 60 fois par seconde), ce qui supprime une à deux images de retard sur un écran à

@@ -20,6 +20,7 @@ const RANGE := 450.0
 const ASSIST_SLOW := 0.55      # ralentissement de la visée près d'une cible
 const ASSIST_CONE := 5.0       # degrés
 const SNAP_CONE := 8.0
+const USE_HOLD := 0.3          # maintenir X pour ramasser une arme
 const TRACK := [0.0, 0.45, 0.65]   # part du déplacement de la cible suivie (assistance rotationnelle)
 
 var joueur: Joueur
@@ -43,6 +44,8 @@ var reload_t := 0.0
 var plate_t := 0.0
 var target_item: Node3D        # butin (arme) ou coffre à portée de main
 var burst_n := 0               # rang du tir dans la rafale (motif de recul)
+var _use_t := -1.0             # manette : depuis combien de temps X est maintenu
+var _use_done := false
 var _track_target: Node3D
 var _track_yaw := 0.0
 var _track_pitch := 0.0
@@ -227,10 +230,29 @@ func simulate(i: Intentions, delta: float) -> void:
 	var scan := not is_bot or _scan_t <= 0.0 or i.interact
 	if scan:
 		target_item = _find_interactable()
-	if (i.interact or i.use) and target_item:
+	elif not is_instance_valid(target_item):
+		target_item = null
+	# Manette (X) : une arme au sol se ramasse en maintenant ; l'appui bref recharge. Le reste
+	# (coffre, station, tablette, tyrolienne) s'ouvre d'un appui.
+	if i.use:
+		_use_t = 0.0
+		_use_done = false
+	if i.use_held and _use_t >= 0.0:
+		_use_t += delta
+	elif not i.use_held:
+		_use_t = -1.0
+	var weapon_here := target_item is Butin
+	if i.interact and target_item:
 		_interact(target_item)
-	elif i.reload or (i.use and target_item == null):
+	elif i.use and target_item and not weapon_here:
+		_interact(target_item)
+	elif i.use and (target_item == null or weapon_here):
 		start_reload()
+	elif i.reload:
+		start_reload()
+	if weapon_here and not _use_done and _use_t >= USE_HOLD:
+		_use_done = true
+		_interact(target_item)
 
 	# Équipements lancés.
 	if (i.lethal and letal_n > 0) or (i.tactical and tactique_n > 0):

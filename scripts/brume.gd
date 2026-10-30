@@ -19,7 +19,11 @@ const PHASES := [
 	[30.0, 40.0, 0.0, 25.0],
 ]
 const START_RADIUS := 400.0
-const FINALS := ["lazaret", "cimetiere", "citerne", "cabanons", "salins"]
+## Lieux de fin de partie et leur poids. Le Lazaret, au centre (où commence la Brume), est plus
+## rare ; la fin d'une partie n'est jamais celle de la précédente.
+const FINALS := {"lazaret": 0.6, "cimetiere": 1.0, "citerne": 1.0, "cabanons": 1.0, "salins": 1.0,
+	"port": 1.0, "batterie": 1.0, "semaphore": 0.8, "conserverie": 0.8}
+static var _derniere := ""
 
 var center := Vector2(0, -10)
 var radius := START_RADIUS
@@ -60,7 +64,20 @@ func _ready() -> void:
 func start(seed_value: int) -> void:
 	rng.seed = seed_value
 	var lieu: Dictionary = {}
-	var id: String = FINALS[rng.randi_range(0, FINALS.size() - 1)]
+	var total := 0.0
+	for k in FINALS:
+		if k != _derniere:
+			total += float(FINALS[k])
+	var r := rng.randf() * total
+	var id := ""
+	for k in FINALS:
+		if k == _derniere:
+			continue
+		id = k
+		r -= float(FINALS[k])
+		if r <= 0.0:
+			break
+	_derniere = id
 	for l in G.data.lieux:
 		if l.id == id:
 			lieu = l
