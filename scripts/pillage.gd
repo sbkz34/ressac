@@ -132,7 +132,18 @@ func spawn_largage(at: Vector3) -> Coffre:
 	c.global_position = p if p != null else at
 	c.drop_from(70.0)
 	chests.append(c)
+	c.opened.connect(_retirer_largage)
 	return c
+
+
+## Un largage ouvert (classe choisie) disparaît peu après : on ne le confond plus avec un neuf.
+func _retirer_largage(c: Coffre) -> void:
+	var tw := c.create_tween()
+	tw.tween_interval(1.4)
+	tw.tween_property(c, "scale", Vector3(0.01, 0.01, 0.01), 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func():
+		chests.erase(c)
+		c.queue_free())
 
 
 # ------------------------------------------------------------------------------------------------

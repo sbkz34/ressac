@@ -70,7 +70,9 @@ secondes d'alerte au sol.
 Face à une fenêtre (à moins d'1,5 m environ), l'interface affiche « FENÊTRE — SAUT : franchir » (le
 bouton tactile devient FRANCHIR) : un saut fait passer par l'ouverture, tête baissée, en une demi-
 seconde (un peu plus vite en sprintant), et on se relève de l'autre côté. Ça marche dans les deux
-sens, au rez-de-chaussée comme aux étages (on retombe alors dehors). Les volets décoratifs sont
+sens, au rez-de-chaussée comme aux étages (on retombe alors dehors). Les bots aussi : les 210
+fenêtres du rez-de-chaussée sont des liens du maillage de navigation, un peu plus coûteux qu'une
+porte, qu'ils empruntent quand c'est nettement plus court. Les volets décoratifs sont
 désormais de part et d'autre des fenêtres, plus devant.
 
 | | |

@@ -51,6 +51,16 @@ func _ready() -> void:
 	pillage.name = "Pillage"
 	add_child(pillage)
 	pillage.shops.assign(ile.shops)
+	# Fenêtres : liens de navigation (les bots les franchissent), un peu plus coûteux qu'une porte.
+	for f in ile.fenetres:
+		var fl := NavigationLink3D.new()
+		fl.bidirectional = true
+		fl.enter_cost = 2.0
+		nav.add_child(fl)
+		fl.global_position = Vector3.ZERO
+		var c: Vector3 = f.c - Vector3(0, 1.0, 0)
+		fl.start_position = c + f.n * Ile.FEN_LIEN
+		fl.end_position = c - f.n * Ile.FEN_LIEN
 	for t in ile.tyroliennes:
 		pillage.tyroliennes.append(t.ancre_bas)
 		pillage.tyroliennes.append(t.ancre_haut)
@@ -1182,7 +1192,42 @@ func _check_fenetre() -> void:
 		_fail("fenêtre détectée dans un mur plein")
 	player.sante.invulnerable = false
 	player.scripted = null
-	print("[check] fenêtre : franchie dans les deux sens (%d)" % player.vaults)
+	# Un bot devant la fenêtre qui veut aller juste derrière passe par la fenêtre (pas par la porte).
+	if ile.fenetres.size() < 50:
+		_fail("fenêtres : %d seulement" % ile.fenetres.size())
+	player.spawn_at(Vector3(wx + 20.0, ile.ground_at(wx + 20.0, wz + 12.0) + 0.1, wz + 12.0), 0.0)
+	_spawn_bots(1, 1, 41)
+	var bf := bots[0]
+	var brf := bf.get_node("Bot") as Bot
+	var start := Vector3(wx, 0, wz + 1.3)
+	var inside := Vector3(wx, float(lz.h) + 0.1, wz - 1.2)
+	brf._think_t = 999.0
+	brf._set_goal(Vector3(start.x, ile.ground_at(start.x, start.z), start.z), "errance")
+	bf.spawn_at(Vector3(start.x, ile.ground_at(start.x, start.z) + 0.1, start.z), 0.0)
+	await _wait(0.3)
+	if bf.vaults != 0 or bf.global_position.z < wz:
+		_fail("bot : déjà passé (%d)" % bf.vaults)
+	brf._set_goal(inside, "errance")
+	var t_win := await _until(func(): return bf.global_position.distance_to(inside) < 1.0, 10.0)
+	if t_win < 0.0 or bf.vaults < 1:
+		_fail("bot : fenêtre pas franchie (%d, %s, %.1f m)" % [bf.vaults, brf.state, bf.global_position.distance_to(inside)])
+	_clear_bots()
+	await _wait(0.1)
+	# Un largage ouvert disparaît.
+	var lg := pillage.spawn_largage(player.global_position + Vector3(3, 0, 0))
+	await _until(func(): return lg.can_open(), 12.0)
+	lg.open_chest()
+	await _wait(2.2)
+	if is_instance_valid(lg) or pillage.chests.has(lg):
+		_fail("largage ouvert toujours là")
+	# Viseurs : un point rouge, pas une barre sur toute la largeur de l'arme.
+	for v in ["point_rouge", "holo"]:
+		var gm := GunShapes.build_model("faucon", Armes.materiaux(0), 1.0, [v])
+		var dots := gm.find_children("*", "MeshInstance3D", true, false).filter(func(mi): return mi.material_override == Armes.reticule())
+		if dots.size() != 1 or ((dots[0] as MeshInstance3D).mesh as BoxMesh).size.x > 0.01:
+			_fail("viseur %s : point rouge" % v)
+		gm.free()
+	print("[check] fenêtre : franchie dans les deux sens (%d), par un bot en %.1f s, %d fenêtres" % [player.vaults, t_win, ile.fenetres.size()])
 
 
 ## Progression : niveaux, expérience d'une partie, défis, camouflages (sur l'arme en main),

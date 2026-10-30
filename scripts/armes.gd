@@ -285,6 +285,18 @@ static func camo_mat(c: String) -> StandardMaterial3D:
 	return m
 
 
+static var _reticule: StandardMaterial3D
+
+
+## Point rouge des viseurs : rouge vif, sans ombrage (il se voit dans toutes les lumières).
+static func reticule() -> StandardMaterial3D:
+	if _reticule == null:
+		_reticule = StandardMaterial3D.new()
+		_reticule.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_reticule.albedo_color = Color(1.0, 0.08, 0.06)
+	return _reticule
+
+
 static func materiaux(rarete: int, camo := "") -> Dictionary:
 	if camo != "" and (CAMO_TEINTES.has(camo) or camo == "or"):
 		var key := "%d|%s" % [rarete, camo]

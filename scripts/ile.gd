@@ -16,6 +16,10 @@ var env: Environment
 var shops: Array[Node3D] = []
 var lantern: Node3D
 var tyroliennes: Array[Tyrolienne] = []
+## Fenêtres du rez-de-chaussée : {"c": centre de l'appui (monde), "n": normale vers l'extérieur}.
+## Les bots peuvent les franchir (liens de navigation).
+var fenetres: Array = []
+var _fen_grid := {}
 var stats := {"batiments": 0, "rampes": 0}
 ## Emplacements de butin par lieu, relevés pendant la construction : {id du lieu: [Vector3]}.
 var loot_spots := {}
@@ -389,6 +393,10 @@ func _batiment(node: Node3D, b: Dictionary) -> void:
 				if door.size() and c + 0.8 > door[0] - 0.4 and c - 0.8 < door[1] + 0.4:
 					continue
 				openings.append([c - 0.65, c + 0.65, 1.0, 2.2])
+				if ground:
+					var nl: Vector3 = {"n": Vector3(0, 0, -1), "s": Vector3(0, 0, 1), "w": Vector3(-1, 0, 0), "e": Vector3(1, 0, 0)}[side]
+					var axis := (e - a) / length
+					_fenetre(node.to_global(a + axis * c + Vector3(0, 1.0, 0)), (node.global_basis * nl).normalized())
 			wall(node, a, e, openings, m, y0, fh)
 	# Toit-terrasse.
 	var top := floors * fh
@@ -596,6 +604,32 @@ func _citerne(node: Node3D, b: Dictionary) -> void:
 	_spot(node, Vector3(0, 0.02, 0))
 	if b.has("tyro"):
 		_tyrolienne(node, b.tyro, 10.0, 5.9, 3.6, 18.3, 3.4)
+
+
+func _fenetre(c: Vector3, n: Vector3) -> void:
+	var f := {"c": c, "n": n}
+	fenetres.append(f)
+	for side in [1.0, -1.0]:
+		var p: Vector3 = c + n * side * FEN_LIEN
+		var key := Vector2i(int(floor(p.x / 2.0)), int(floor(p.z / 2.0)))
+		if not _fen_grid.has(key):
+			_fen_grid[key] = []
+		_fen_grid[key].append([p, f, side > 0.0])
+
+
+const FEN_LIEN := 0.85   # distance au mur des deux bouts du lien de navigation d'une fenêtre
+
+
+## Fenêtre dont un bout de lien est à ce point : [fenêtre, vrai si ce bout est dehors], ou [].
+func fenetre_at(p: Vector3, tol := 0.35) -> Array:
+	var key := Vector2i(int(floor(p.x / 2.0)), int(floor(p.z / 2.0)))
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for it in _fen_grid.get(key + Vector2i(dx, dz), []):
+				var q: Vector3 = it[0]
+				if Vector2(q.x - p.x, q.z - p.z).length() < tol and absf(q.y - 1.0 - p.y) < 0.8:
+					return [it[1], it[2]]
+	return []
 
 
 ## Tyrolienne du sol (à `r_sol` du pied, direction `dir` dans le repère du bâtiment) jusqu'au

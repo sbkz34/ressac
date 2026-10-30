@@ -151,7 +151,8 @@ func can_open() -> bool:
 func open_chest() -> void:
 	if not can_open():
 		return
-	G.play_at("box", global_position, 0.0)
+	if not largage or not is_open:
+		G.play_at("coffre", global_position, -2.0, randf_range(0.95, 1.05))
 	if not ravitaillement:
 		is_open = true
 		_glow.visible = false

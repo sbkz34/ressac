@@ -832,9 +832,25 @@ func _try_vault() -> bool:
 	var wnd := find_window()
 	if wnd.is_empty():
 		return false
+	_start_vault(wnd.mid, wnd.to)
+	return true
+
+
+## Franchir une fenêtre connue (bots) : centre de l'appui, direction de passage.
+func vault_window(c: Vector3, dir: Vector3) -> void:
+	if etat != Etat.SOL:
+		return
+	dir = Vector3(dir.x, 0, dir.z).normalized()
+	_yaw = atan2(-dir.x, -dir.z)
+	rotation.y = _yaw
+	var sill := Vector3(c.x, c.y + 0.05, c.z)
+	_start_vault(sill - dir * 0.57, sill + dir * 0.9)
+
+
+func _start_vault(mid: Vector3, to: Vector3) -> void:
 	_mantle_from = global_position
-	_vault_mid = wnd.mid
-	_mantle_to = wnd.to
+	_vault_mid = mid
+	_mantle_to = to
 	_mantle_posture = Posture.DEBOUT if _fits(_mantle_to, HEIGHTS[Posture.DEBOUT]) else Posture.ACCROUPI
 	_mantle_sprint = sprinting
 	_mantle_t = 0.0
@@ -845,7 +861,6 @@ func _try_vault() -> bool:
 	_set_etat(Etat.ESCALADE)
 	_snd("pas_dur_%d" % randi_range(1, 4), -10.0, 0.75)
 	vaults += 1
-	return true
 
 
 func _try_mantle() -> bool:

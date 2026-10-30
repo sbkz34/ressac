@@ -704,7 +704,7 @@ func _follow(to: Vector3, delta: float, reach: float, sprint: bool) -> bool:
 		_progress_t += delta
 		if _progress_t > 5.0:
 			_unreachable = true
-	if _zip_on_path(p):
+	if _zip_on_path(p) or _window_on_path(p):
 		return false
 	var next := to
 	if _path.size() >= 2:
@@ -724,6 +724,27 @@ func _follow(to: Vector3, delta: float, reach: float, sprint: bool) -> bool:
 		if not j.sprinting and j.etat == Joueur.Etat.SOL and j.posture == Joueur.Posture.DEBOUT:
 			_i.sprint = true
 		_slide_cancel(delta, dflat)
+	return false
+
+
+## Le chemin passe par une fenêtre (lien de navigation) et on est devant : on la franchit.
+func _window_on_path(p: Vector3) -> bool:
+	if ile == null or j.etat != Joueur.Etat.SOL or _path.size() < 2:
+		return false
+	for k in range(maxi(_pi - 1, 0), mini(_pi + 1, _path.size() - 1)):
+		var a := _path[k]
+		var b := _path[k + 1]
+		if Vector2(a.x - p.x, a.z - p.z).length() > 0.9 or absf(a.y - p.y) > 1.0:
+			continue
+		var fa := ile.fenetre_at(a)
+		var fb := ile.fenetre_at(b)
+		if fa.is_empty() or fb.is_empty() or fa[0] != fb[0] or fa[1] == fb[1]:
+			continue
+		var f: Dictionary = fa[0]
+		j.vault_window(f.c, b - a)
+		_path = PackedVector3Array()
+		_progress_d = INF
+		return true
 	return false
 
 

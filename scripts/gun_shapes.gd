@@ -213,14 +213,14 @@ static func _accessoires(parts: Array, grip: Vector2, muzzle: Vector2, acc: Arra
 		parts.append(_r(top_x, top + 0.006, 0.055, 0.012, 0.0, "dark"))
 		parts.append(_r(top_x + 0.022, top + 0.03, 0.008, 0.036, 0.0, "verre"))
 		parts.append(_r(top_x + 0.012, top + 0.05, 0.032, 0.006, 0.0, "dark"))
-		parts.append(_r(top_x + 0.027, top + 0.03, 0.002, 0.004, 0.0, "glow"))
+		parts.append(_dot(top_x + 0.027, top + 0.03))
 		sight = top + 0.03
 	if has.call("holo"):
 		parts.append(_r(top_x, top + 0.008, 0.1, 0.016, 0.0, "dark"))
 		parts.append(_r(top_x + 0.045, top + 0.036, 0.008, 0.048, 0.0, "verre"))
 		parts.append(_r(top_x - 0.045, top + 0.036, 0.008, 0.048, 0.0, "verre"))
 		parts.append(_r(top_x, top + 0.064, 0.1, 0.008, 0.0, "dark"))
-		parts.append(_r(top_x + 0.05, top + 0.036, 0.002, 0.004, 0.0, "glow"))
+		parts.append(_dot(top_x + 0.05, top + 0.036))
 		sight = top + 0.036
 	if has.call("lunette"):
 		parts.append(_r(top_x - 0.03, top + 0.012, 0.025, 0.024, 0.0, "metal"))
@@ -251,6 +251,13 @@ static func _r(x: float, y: float, w: float, h: float, a: float, mat: String, ro
 	return {"p": Vector2(x, y), "s": Vector2(w, h), "a": a, "m": mat, "role": role}
 
 
+## Point rouge d'un viseur : un petit carré au milieu (pas une barre sur toute la largeur de l'arme).
+static func _dot(x: float, y: float) -> Dictionary:
+	var r := _r(x, y, 0.002, 0.0055, 0.0, "reticule")
+	r["d"] = 0.0055
+	return r
+
+
 ## Builds the 3D model: the barrel points along -Z, the grip is at the origin.
 static func build_model(weapon_id: String, mats: Dictionary, scale := 1.0, acc: Array = []) -> Node3D:
 	var sh := shape(weapon_id, acc)
@@ -262,9 +269,9 @@ static func build_model(weapon_id: String, mats: Dictionary, scale := 1.0, acc: 
 		var mi := MeshInstance3D.new()
 		var bm := BoxMesh.new()
 		var s: Vector2 = part.s
-		bm.size = Vector3(sh.depth, s.y, s.x) * scale
+		bm.size = Vector3(float(part.get("d", sh.depth)), s.y, s.x) * scale
 		mi.mesh = bm
-		mi.material_override = mats.get(part.m, mats.get("metal"))
+		mi.material_override = mats.get(part.m, Armes.reticule() if part.m == "reticule" else mats.get("metal"))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var p: Vector2 = (part.p - grip) * scale
 		mi.position = Vector3(0, p.y, -p.x)

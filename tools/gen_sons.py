@@ -4,7 +4,7 @@
 Pas sur la terre, sur un sol dur et dans l'eau (plusieurs variantes, plus naturels que l'ancien
 « step »), vent de chute libre et sous la voile, ouverture du parachute, sortie de l'avion, moteur
 de l'avion, entrée dans l'eau et brasse, marqueurs de touche (corps, tête, armure, armure brisée),
-battements de cœur quand on est à bout de forces, tyrolienne.
+battements de cœur quand on est à bout de forces, tyrolienne, ouverture de coffre.
 
     python3 tools/gen_sons.py        → assets/sfx/*.wav
 """
@@ -213,3 +213,13 @@ body = (whine + rattle * 0.35 + hiss) * np.clip(tt / 0.15, 0, 1) * np.clip((d - 
 dd = 0.35
 clunk = low(white(dd), 400) * env(dd, 0.002, 0.08) * 1.6 + np.sin(2 * np.pi * 140 * t(dd)) * env(dd, 0.001, 0.06)
 write("tyrolienne.wav", place(d + 0.4, [(0.0, body, 0.8), (d - 0.15, clunk, 1.0)]), peak=0.6)
+
+# Ouverture de coffre, courte : déclic du loquet, couvercle qui grince un instant, choc du bois.
+d = 0.5
+tt = t(d)
+click = band(white(d), 2500, 7000) * env(d, 0.0005, 0.008)
+f = 380 + 260 * np.clip(tt / 0.18, 0, 1)
+creak = np.sin(2 * np.pi * np.cumsum(f) / SR) * (0.6 + 0.4 * (np.sin(2 * np.pi * 47 * tt) > 0))
+creak = band(creak, 300, 2500) * np.clip(tt / 0.02, 0, 1) * np.exp(-tt * 9.0) * 0.5
+thud = low(white(d), 300) * env(d, 0.002, 0.06) * 1.4 + np.sin(2 * np.pi * 110 * tt) * env(d, 0.001, 0.05)
+write("coffre.wav", place(d, [(0.0, click, 0.9), (0.03, creak, 0.7), (0.22, thud, 1.0)]), peak=0.7)
