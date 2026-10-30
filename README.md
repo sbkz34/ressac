@@ -45,6 +45,26 @@ Les sons des autres (tirs, pas, réceptions) sont placés dans l'espace.
 | ![Bots](docs/captures/38_bots.jpg) | ![Partie à 16](docs/captures/40_partie_bots.jpg) |
 | ![Lobby](docs/captures/30_lobby.jpg) | ![Fin de partie](docs/captures/37_fin.jpg) |
 
+### Contrats et séries
+
+Huit **tablettes de contrat** sont posées dans les lieux. On en prend une (bouton d'interaction)
+et on a deux minutes et demie au plus pour la remplir :
+
+- **Prime** (+1 500 €) : un adversaire à environ 140 m est désigné ; sa zone approximative
+  s'affiche et se met à jour toutes les 10 s. Réussi seulement si c'est vous qui l'éliminez.
+- **Chasse au trésor** (+1 000 €) : trois coffres signalés sur les cartes, à ouvrir tous.
+- **Reconnaissance** (+800 €) : tenir 12 s une zone signalée ; les ennemis sont ensuite révélés
+  sur les cartes pendant 20 s.
+
+La boutique vend deux **séries** : le **drone de repérage** (3 500 €, tous les ennemis visibles
+sur les cartes pendant 30 s) et la **frappe de précision** (3 000 €) : la carte s'ouvre, on place
+la cible au stick (A pour valider) ou d'un toucher, et trois obus tombent en ligne après trois
+secondes d'alerte au sol.
+
+| | |
+|---|---|
+| ![Tablette de contrat](docs/captures/43_tablette.jpg) | ![Carte : contrat, ennemis révélés, frappe](docs/captures/44_carte_contrat.jpg) |
+
 ### Classes, commandes et réglages
 
 Au lobby, l'écran **Classes** montre les 5 classes avec le rendu de leurs armes (les vrais

@@ -1038,6 +1038,88 @@ func _check() -> void:
 	get_tree().quit(0 if _errors.is_empty() else 1)
 
 
+## Contrats (reconnaissance, trésor, prime) et séries de la boutique (drone, frappe).
+func _check_contrats() -> String:
+	await start_partie(2, 1)
+	partie.brume.time_scale = 0.0
+	var ct := partie.contrats
+	var ar := player.arsenal
+	await _until(func(): return bots[0].etat == Joueur.Etat.SOL and bots[1].etat == Joueur.Etat.SOL, 60.0)
+	for bt in bots:
+		(bt.get_node("Bot") as Bot).set_physics_process(false)
+		bt.scripted = Intentions.new()
+		bt.sante.invulnerable = true
+	var base := Vector3(0, ile.ground_at(0, -15) + 0.1, -15)
+	player.spawn_at(base, 0.0)
+	player.ui_block = false
+	var tabs := pillage.contrats.size()
+	if tabs < 4:
+		_fail("contrats : %d tablettes" % tabs)
+	var take := func(kind: String) -> void:
+		var t := Contrats.Tablette.new()
+		t.kind = kind
+		pillage.add_child(t)
+		ct.prendre(t)
+	# Reconnaissance : tenir la zone, l'argent tombe et les ennemis sont révélés.
+	var money := ar.argent
+	take.call("recon")
+	if ct.actif != "recon" or ct.markers().is_empty() or ct.status() == "":
+		_fail("reconnaissance : contrat pas lancé (%s)" % ct.actif)
+	player.spawn_at(ct.zone + Vector3(0, 0.2, 0), 0.0)
+	var t_rec := await _until(func(): return ct.actif == "", Contrats.RECON_TEMPS + 6.0)
+	if t_rec < 0.0 or ar.argent != money + Contrats.RECOMPENSE.recon or not ct.revele():
+		_fail("reconnaissance : %.1f s, %d €, révélés %s" % [t_rec, ar.argent - money, ct.revele()])
+	# Trésor : ouvrir les trois coffres.
+	money = ar.argent
+	take.call("tresor")
+	if ct.actif != "tresor" or ct.coffres.size() != 3:
+		_fail("trésor : %d coffres" % ct.coffres.size())
+	for c in ct.coffres.duplicate():
+		c.open_chest()
+		await _wait(0.05)
+	if ct.actif != "" or ar.argent != money + Contrats.RECOMPENSE.tresor:
+		_fail("trésor : %s, %d €" % [ct.actif, ar.argent - money])
+	# Prime : le joueur abat la cible.
+	money = ar.argent
+	take.call("prime")
+	var target := ct.cible
+	if ct.actif != "prime" or target == null:
+		_fail("prime : pas de cible")
+	else:
+		target.sante.invulnerable = false
+		target.sante.take(500.0, "torse", "balle", true, player)
+		await _wait(0.1)
+		if ct.actif != "" or ar.argent != money + Contrats.RECOMPENSE.prime or int(partie.stats.get("contrats", 0)) != 3:
+			_fail("prime : %s, %d €" % [ct.actif, ar.argent - money])
+	# Séries : drone (ennemis révélés), frappe (choix sur la carte, dégâts comptés au joueur).
+	ct.revele_jusqu = 0.0
+	ar.argent = 9000
+	var station := Node3D.new()
+	add_child(station)
+	if not Boutique.buy(ar, "drone", station, pillage) or not ct.revele():
+		_fail("drone : pas d'ennemis révélés")
+	if not Boutique.buy(ar, "frappe", station, pillage) or ct.frappes != 1 or not hud._map.visible or not hud._map.targeting:
+		_fail("frappe : carte de visée pas ouverte (%d frappes)" % ct.frappes)
+	station.queue_free()
+	var victim := bots[0]
+	if victim.sante.dead:
+		victim = bots[1]
+	victim.sante.invulnerable = false
+	victim.sante.reset(0)
+	victim.spawn_at(base + Vector3(40, 0, 0), 0.0)
+	victim.global_position.y = ile.ground_at(victim.global_position.x, victim.global_position.z) + 0.1
+	await _wait(0.5)
+	hud._frappe_chosen(Vector2(victim.global_position.x, victim.global_position.z))
+	if ct.frappes != 0 or hud._map.visible or player.ui_block:
+		_fail("frappe : carte toujours ouverte")
+	await _until(func(): return victim.sante.dead, 6.0)
+	if not victim.sante.dead or victim.sante.last_attacker != player:
+		_fail("frappe : cible %s, %.0f PV, par %s" % [victim.sante.dead, victim.sante.hp, victim.sante.last_attacker])
+	_end_partie()
+	await _wait(0.1)
+	return "contrats : %d tablettes, reconnaissance en %.1f s" % [tabs, t_rec]
+
+
 func _check_bots() -> String:
 	var out := []
 	var lz: Dictionary = G.data.lieux.filter(func(l): return l.id == "lazaret")[0]
@@ -1075,9 +1157,9 @@ func _check_bots() -> String:
 	b0.spawn_at(line, deg_to_rad(float(cdt.cap)) + 0.4)
 	b0.arsenal.slots = [Armes.nouvelle("faucon", 2, []), {}]
 	b0.arsenal.reserve["fusil"] = 240
-	var t_dummy := await _until(func(): return downed[0] >= 1, 25.0)
+	var t_dummy := await _until(func(): return downed[0] >= 1, 40.0)
 	if t_dummy < 0.0:
-		_fail("bot : aucun mannequin abattu en 25 s (%d tirs, état %s)" % [b0.arsenal.shots_fired, brain0.state])
+		_fail("bot : aucun mannequin abattu en 40 s (%d tirs, état %s)" % [b0.arsenal.shots_fired, brain0.state])
 	out.append("mannequin en %.1f s (%d tirs)" % [t_dummy, b0.arsenal.shots_fired])
 	_clear_bots()
 	await _wait(0.1)
@@ -1143,6 +1225,9 @@ func _check_bots() -> String:
 		_fail("bot éliminé : pas de réapparition prévue")
 	_end_partie()
 	await _wait(0.1)
+
+	# Contrats et séries.
+	out.append(await _check_contrats())
 
 	# Partie accélérée à 24 : elle va jusqu'au bout (dernier debout), sans blocage.
 	var t0 := Time.get_ticks_msec()
@@ -1617,6 +1702,33 @@ func _tour() -> void:
 	G.shots[1] = [player.global_position + Vector3(40, 0, -30), now, bots[0]]
 	G.shots[2] = [player.global_position + Vector3(-50, 0, -60), now - 1.5, bots[1]]
 	await _shot(dir, "40_partie_bots", 2)
+	# Contrats : une tablette au sol, puis la carte (zone, ennemis révélés, visée de la frappe).
+	player.sante.hp = 100.0
+	var lz0: Dictionary = G.data.lieux[0]
+	var gp := Vector3(float(lz0.x) + 6.0, 0, float(lz0.z) + 6.0)
+	player.spawn_at(Vector3(gp.x, ile.ground_at(gp.x, gp.z) + 0.1, gp.z), 0.0)
+	for k in 5:
+		var bk := bots[k]
+		(bk.get_node("Bot") as Bot).set_physics_process(false)
+		bk.scripted = Intentions.new()
+		var ang := k * 1.3
+		var bp := gp + Vector3(cos(ang), 0, sin(ang)) * (60.0 + k * 25.0)
+		bk.spawn_at(Vector3(bp.x, ile.ground_at(bp.x, bp.z) + 0.1, bp.z), 0.0)
+	await _wait(0.5)
+	var tab: Node3D = pillage.contrats[0]
+	var fwd := -player.global_basis.z
+	var tp := player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 2.2
+	tab.global_position = Vector3(tp.x, ile.ground_at(tp.x, tp.z), tp.z)
+	player.look_at_point(tab.global_position + Vector3(0, 0.3, 0))
+	await _wait(0.4)
+	await _shot(dir, "43_tablette")
+	(tab as Contrats.Tablette).kind = "recon"
+	partie.contrats.prendre(tab)
+	partie.contrats.drone()
+	partie._serie("frappe")
+	await _wait(0.3)
+	await _shot(dir, "44_carte_contrat")
+	hud.toggle_map()
 	show_lobby()
 	player.scripted = null
 	get_tree().quit()

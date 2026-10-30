@@ -28,6 +28,7 @@ var last_drop := {}                # zone visée au dernier redéploiement (test
 var combatants: Array[Joueur] = []
 var info := {}                     # combattant -> {respawn, out, kills, deaths}
 var rng := RandomNumberGenerator.new()
+var contrats: Contrats
 
 
 func setup(p: Joueur, pl: Pillage, i: Ile) -> void:
@@ -41,6 +42,12 @@ func setup(p: Joueur, pl: Pillage, i: Ile) -> void:
 	brume.closing_started.connect(func(_n): message.emit("La Brume avance !"))
 	brume.closed.connect(_on_closed)
 	add_combatant(player)
+	contrats = Contrats.new()
+	contrats.name = "Contrats"
+	add_child(contrats)
+	contrats.message.connect(func(t): message.emit(t))
+	player.arsenal.contract_requested.connect(func(t): contrats.prendre(t))
+	Boutique.series = _serie
 
 
 func add_combatant(c: Joueur) -> void:
@@ -59,6 +66,8 @@ func start(seed_value: int) -> void:
 	stats = {"temps": 0.0, "morts": 0, "phase": 1, "argent": 0, "eliminations": 0,
 		"place": 0, "total": combatants.size()}
 	brume.start(seed_value)
+	contrats.setup(self)
+	contrats.spawn_tablettes()
 	message.emit("Fin de partie prévue : %s" % brume.final_place)
 
 
@@ -206,7 +215,18 @@ func _finish(victory: bool) -> void:
 	ended.emit(victory, stats)
 
 
+## Séries achetées par le joueur à une station.
+func _serie(id: String) -> void:
+	match id:
+		"drone": contrats.drone()
+		"frappe":
+			contrats.frappes += 1
+			contrats.changed.emit()
+			message.emit("Frappe prête : choisissez la cible sur la carte")
+
+
 func stop() -> void:
+	Boutique.series = Callable()
 	running = false
 	for c in combatants:
 		c.in_gas = false

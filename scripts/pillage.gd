@@ -21,6 +21,7 @@ var items: Array[Butin] = []
 var chests: Array[Coffre] = []
 var targets: Array[Cible] = []
 var shops: Array[Node3D] = []   # stations d'achat de l'île (interactives)
+var contrats: Array = []          # tablettes de contrat (contrats.gd)
 
 
 func _pick_weighted(weights: Array) -> int:
@@ -94,6 +95,7 @@ func clear() -> void:
 	items.clear()
 	chests.clear()
 	targets.clear()
+	contrats.clear()
 	for n in get_children():
 		n.queue_free()
 

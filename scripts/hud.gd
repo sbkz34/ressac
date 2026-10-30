@@ -49,6 +49,8 @@ var _panel_kind := ""
 var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
+var _contrat_lbl: Label
+var _frappes_vues := 0
 var largage: LargageUI
 var _panel_dim: ColorRect
 var _panel_center: CenterContainer
@@ -145,6 +147,10 @@ func _ready() -> void:
 	_brume_lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	_brume_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_brume_lbl.offset_top = 68
+	_contrat_lbl = _label(_frame, 18, Color(1, 0.84, 0.42))
+	_contrat_lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_contrat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_contrat_lbl.offset_top = 94
 	_respawn_lbl = _label(_frame, 34, Color(1, 0.9, 0.6))
 	_respawn_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_respawn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -183,6 +189,7 @@ func _ready() -> void:
 	_map = MapView.new()
 	_map.visible = false
 	add_child(_map)
+	_map.target_chosen.connect(_frappe_chosen)
 	_build_pause()
 	_build_binds()
 	_build_settings()
@@ -245,6 +252,29 @@ func set_partie(p: Partie) -> void:
 	if p:
 		p.message.connect(notify)
 		p.killed.connect(_on_killed)
+		p.contrats.changed.connect(_on_contrats_changed)
+
+
+## Une frappe vient d'être achetée : la carte s'ouvre pour choisir la cible.
+func _on_contrats_changed() -> void:
+	var n := partie.contrats.frappes if partie else 0
+	var bought := n > _frappes_vues
+	_frappes_vues = n
+	if bought and not _map.targeting:
+		close_panel()
+		_map.visible = true
+		_mini.visible = false
+		_map.start_target(Vector2(player.global_position.x, player.global_position.z))
+		player.ui_block = true
+
+
+func _frappe_chosen(at: Vector2) -> void:
+	_map.targeting = false
+	_map.visible = false
+	_mini.visible = true
+	player.ui_block = false
+	if partie:
+		partie.contrats.frappe(Vector3(at.x, 0, at.y))
 
 
 ## Fil des éliminations, en haut à gauche (les plus récentes en bas).
@@ -336,6 +366,13 @@ func frame_rect() -> Rect2:
 func toggle_map() -> void:
 	_map.visible = not _map.visible
 	_mini.visible = not _map.visible
+	if _map.visible and partie and partie.running and partie.contrats.frappes > 0:
+		_map.start_target(Vector2(player.global_position.x, player.global_position.z))
+		player.ui_block = true
+	elif not _map.visible and _map.targeting:
+		_map.targeting = false
+		_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		player.ui_block = false
 
 
 func open_pause() -> void:
@@ -908,6 +945,15 @@ func _process(delta: float) -> void:
 			tl[k] = ""
 	touch.labels = tl
 	_money.text = "%d €" % a.argent
+	_contrat_lbl.text = partie.contrats.status() if in_match else ""
+	if in_match and partie.contrats.frappes > 0 and not _map.visible:
+		_contrat_lbl.text += ("   " if _contrat_lbl.text != "" else "") + "FRAPPE PRÊTE : ouvrir la carte"
+	# Visée de la frappe sur la carte : stick / clavier pour le curseur, A ou Espace pour valider.
+	if _map.visible and _map.targeting:
+		var mv := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		_map.cursor += mv * 160.0 * delta
+		if Time.get_ticks_msec() - _map.since > 350 and (Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("ui_accept")):
+			_map.target_chosen.emit(_map.cursor)
 	if in_match and partie.combatants.size() > 1:
 		_alive_lbl.text = "%d EN JEU  ·  %d ÉLIM." % [partie.remaining(), int(partie.stats.get("eliminations", 0))]
 	else:
@@ -935,7 +981,14 @@ func _process(delta: float) -> void:
 
 class MapView:
 	extends Control
-	## Carte tactique : l'image générée, les noms des lieux, le joueur et le trajet de l'avion.
+	## Carte tactique : l'image générée, les noms des lieux, le joueur et le trajet de l'avion,
+	## la Brume, les largages, les tirs, les contrats, les ennemis révélés ; visée de la frappe.
+	signal target_chosen(at: Vector2)
+	var targeting := false
+	var since := 0
+	var cursor := Vector2.ZERO
+	var _origin := Vector2.ZERO
+	var _side := 1.0
 	var player: Node3D
 	var avion: Avion
 	var partie: Partie
@@ -957,6 +1010,8 @@ class MapView:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.6))
 		var side := minf(size.x, size.y) * 0.94
 		var origin := (size - Vector2(side, side)) / 2
+		_origin = origin
+		_side = side
 		draw_texture_rect(_tex, Rect2(origin, Vector2(side, side)), false)
 		var world := float(G.data.get("monde", 640))
 		var to_map := func(x: float, z: float) -> Vector2:
@@ -994,6 +1049,22 @@ class MapView:
 				continue
 			var sp: Vector2 = to_map.call(sh[0].x, sh[0].z)
 			draw_circle(sp, side / 110.0, Color(1, 0.15, 0.1, 1.0 - float(sh[1]) / G.SHOT_VISIBLE))
+		if partie and partie.running:
+			for mk in partie.contrats.markers():
+				var mp: Vector2 = to_map.call(mk[0].x, mk[0].z)
+				draw_arc(mp, maxf(float(mk[1]) * px_per_m, 6.0), 0, TAU, 40, mk[2], 3.0)
+			if partie.contrats.revele():
+				for c in partie.combatants:
+					if c != player and partie.is_alive(c) and c.etat != Joueur.Etat.AVION:
+						draw_circle(to_map.call(c.global_position.x, c.global_position.z), side / 120.0, Color(1, 0.2, 0.15))
+		if targeting:
+			var cp: Vector2 = to_map.call(cursor.x, cursor.y)
+			draw_arc(cp, 9.0 * px_per_m, 0, TAU, 40, Color(1, 0.2, 0.15), 3.0)
+			draw_line(cp - Vector2(20, 0), cp + Vector2(20, 0), Color(1, 0.2, 0.15), 2.0)
+			draw_line(cp - Vector2(0, 20), cp + Vector2(0, 20), Color(1, 0.2, 0.15), 2.0)
+			var ft := ThemeDB.fallback_font
+			draw_string_outline(ft, Vector2(0, size.y - 30), "FRAPPE DE PRÉCISION : choisir la cible (stick puis A, ou toucher la carte)", HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, 6, Color(0, 0, 0))
+			draw_string(ft, Vector2(0, size.y - 30), "FRAPPE DE PRÉCISION : choisir la cible (stick puis A, ou toucher la carte)", HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(1, 0.84, 0.42))
 		if is_instance_valid(avion):
 			var a: Vector2 = to_map.call(avion.start.x, avion.start.z)
 			var b: Vector2 = to_map.call(avion.end.x, avion.end.z)
@@ -1009,6 +1080,21 @@ class MapView:
 			draw_colored_polygon(PackedVector2Array([pp + dir * s * 1.4, pp - dir * s * 0.8 + perp * s, pp - dir * s * 0.8 - perp * s]), Color(0.2, 0.9, 1.0))
 			draw_polyline(PackedVector2Array([pp + dir * s * 1.4, pp - dir * s * 0.8 + perp * s, pp - dir * s * 0.8 - perp * s, pp + dir * s * 1.4]), Color(0, 0, 0), 2.0)
 
+
+	func start_target(from: Vector2) -> void:
+		since = Time.get_ticks_msec()
+		targeting = true
+		cursor = from
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	func _gui_input(e: InputEvent) -> void:
+		if targeting and e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and Time.get_ticks_msec() - since > 350:
+			var world := float(G.data.get("monde", 640))
+			var rel: Vector2 = (e.position - _origin) / _side
+			cursor = Vector2((rel.x - 0.5) * world, (rel.y - 0.5) * world)
+			mouse_filter = Control.MOUSE_FILTER_IGNORE
+			target_chosen.emit(cursor)
+			accept_event()
 
 	func _dashed_circle(c: Vector2, r: float, col: Color) -> void:
 		if r < 1.0:
@@ -1068,6 +1154,13 @@ class MiniMap:
 					draw_circle(to_s.call(ch.global_position.x, ch.global_position.z), 4.0, Color(0.4, 1.0, 0.5))
 		if is_instance_valid(avion):
 			draw_circle(to_s.call(avion.global_position.x, avion.global_position.z), 4.0, Color(1, 0.8, 0.2))
+		if partie and partie.running:
+			for mk in partie.contrats.markers():
+				draw_arc(to_s.call(mk[0].x, mk[0].z), maxf(float(mk[1]) * k, 5.0), 0, TAU, 32, mk[2], 2.0)
+			if partie.contrats.revele():
+				for cb in partie.combatants:
+					if cb != player and partie.is_alive(cb) and cb.etat != Joueur.Etat.AVION:
+						draw_circle(to_s.call(cb.global_position.x, cb.global_position.z), 4.0, Color(1, 0.2, 0.15))
 		# Tirs ennemis : un point rouge qui s'estompe.
 		for sh in G.recent_shots():
 			if sh[2] == player:

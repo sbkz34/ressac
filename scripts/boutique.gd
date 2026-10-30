@@ -9,7 +9,12 @@ const ARTICLES := [
 	{"id": "masque", "nom": "Masque à gaz", "prix": 1200, "desc": "25 s sans dégâts dans la Brume."},
 	{"id": "grenade", "nom": "Grenade", "prix": 600, "desc": "Équipement létal (2 au maximum)."},
 	{"id": "fumigene", "nom": "Fumigène", "prix": 400, "desc": "Équipement tactique (2 au maximum)."},
+	{"id": "drone", "nom": "Drone de repérage", "prix": 3500, "desc": "Les ennemis apparaissent sur la carte pendant 30 s."},
+	{"id": "frappe", "nom": "Frappe de précision", "prix": 3000, "desc": "Trois obus là où vous le choisissez sur la carte."},
 ]
+
+## Séries (drone, frappe) : la partie en cours les reçoit (rien hors partie).
+static var series: Callable
 
 
 static func article(id: String) -> Dictionary:
@@ -37,6 +42,9 @@ static func refusal(a: Arsenal, id: String) -> String:
 					full = false
 			if full:
 				return "Munitions déjà au maximum"
+		"drone", "frappe":
+			if not series.is_valid() or a.is_bot:
+				return "Seulement en partie"
 		"masque":
 			if a.gas_mask > 0.0:
 				return "Masque déjà porté"
@@ -65,6 +73,8 @@ static func buy(a: Arsenal, id: String, station: Node3D, pillage: Pillage) -> bo
 		"munitions":
 			for k in a.reserve:
 				a.reserve[k] = int(Armes.MUNITIONS[k].max)
+		"drone", "frappe":
+			series.call(id)
 		"masque":
 			a.gas_mask = 25.0
 		"grenade":

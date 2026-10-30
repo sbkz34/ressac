@@ -10,6 +10,7 @@ signal changed
 signal notice(text: String)
 signal shop_requested(station: Node3D)
 signal loadout_requested(crate: Coffre)
+signal contract_requested(tablette: Node3D)
 
 const REACH := 2.0
 const SPRINT_OUT := 0.14       # délai avant de tirer en sortant du sprint
@@ -435,6 +436,14 @@ func _find_interactable() -> Node3D:
 		if score < best_score:
 			best_score = score
 			best = c
+	if not is_bot:
+		for t in pillage.contrats:
+			if not is_instance_valid(t):
+				continue
+			var score := _reach_score(p, fwd, (t as Node3D).global_position + Vector3(0, 0.2, 0))
+			if score < best_score:
+				best_score = score
+				best = t
 	for st in pillage.shops:
 		var score := _reach_score(p, fwd, st.global_position + Vector3(0, 0.6, 0)) * 0.9
 		if score < best_score:
@@ -466,6 +475,8 @@ func interact_label() -> String:
 		return (target_item as Coffre).label()
 	if target_item and target_item.has_meta("boutique"):
 		return "Station d'achat"
+	if target_item and target_item.is_in_group("contrat"):
+		return target_item.call("label")
 	return ""
 
 
@@ -481,6 +492,9 @@ func _interact(t: Node3D) -> void:
 		return
 	if t.has_meta("boutique"):
 		shop_requested.emit(t)
+		return
+	if t.is_in_group("contrat"):
+		contract_requested.emit(t)
 		return
 	var b := t as Butin
 	var w := b.arme.duplicate()
