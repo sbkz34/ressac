@@ -49,6 +49,9 @@ var _panel_kind := ""
 var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
+var largage: LargageUI
+var _panel_dim: ColorRect
+var _panel_center: CenterContainer
 var _binds: Control
 var _binds_box: VBoxContainer
 var _binds_grid: GridContainer
@@ -597,21 +600,36 @@ func _build_panel() -> void:
 	_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_panel.visible = false
 	add_child(_panel)
-	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.05, 0.08, 0.7)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_panel.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_panel.add_child(center)
+	_panel_dim = ColorRect.new()
+	_panel_dim.color = Color(0.02, 0.05, 0.08, 0.7)
+	_panel_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_panel.add_child(_panel_dim)
+	_panel_center = CenterContainer.new()
+	_panel_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_panel.add_child(_panel_center)
 	_panel_box = VBoxContainer.new()
 	_panel_box.custom_minimum_size = Vector2(620, 0)
 	_panel_box.add_theme_constant_override("separation", 8)
-	center.add_child(_panel_box)
+	_panel_center.add_child(_panel_box)
+	# Choix de la classe d'un largage : bandeau en bas, la partie reste visible au-dessus.
+	largage = LargageUI.new()
+	largage.visible = false
+	_panel.add_child(largage)
+	largage.closed.connect(close_panel)
+	largage.picked.connect(func(k: int):
+		var d := Loadouts.get_one(k)
+		if is_instance_valid(_crate) and _crate.can_open():
+			_crate.open_chest()
+			player.arsenal.apply_loadout(d)
+		close_panel())
 
 
 func _panel_begin(kind: String, title: String) -> void:
 	_panel_kind = kind
+	var band := kind == "classe"
+	largage.visible = band
+	_panel_center.visible = not band
+	_panel_dim.visible = not band
 	for n in _panel_box.get_children():
 		_panel_box.remove_child(n)
 		n.queue_free()
@@ -675,16 +693,8 @@ func open_shop(station: Node3D) -> void:
 
 func open_loadout_choice(crate: Coffre) -> void:
 	_crate = crate
-	_panel_begin("classe", "LARGAGE DE CLASSE")
-	for k in Loadouts.SLOTS:
-		var d := Loadouts.get_one(k)
-		_panel_button("%s\n%s" % [d.nom, Loadouts.summary(d)], func():
-			if is_instance_valid(_crate) and _crate.can_open():
-				_crate.open_chest()
-				player.arsenal.apply_loadout(d)
-			close_panel())
-	_panel_button("Fermer", close_panel, false, true)
-	_panel_end()
+	_panel_begin("classe", "")
+	largage.build()
 
 
 func show_end(victory: bool, stats: Dictionary) -> void:

@@ -45,6 +45,23 @@ Les sons des autres (tirs, pas, réceptions) sont placés dans l'espace.
 | ![Bots](docs/captures/38_bots.jpg) | ![Partie à 16](docs/captures/40_partie_bots.jpg) |
 | ![Lobby](docs/captures/30_lobby.jpg) | ![Fin de partie](docs/captures/37_fin.jpg) |
 
+### Classes, commandes et réglages
+
+Au lobby, l'écran **Classes** montre les 5 classes avec le rendu de leurs armes (les vrais
+modèles du jeu), leurs statistiques en jauges, les atouts et l'équipement en icônes. On change
+une arme dans une grille (comparaison avec l'arme équipée : bleu = mieux, orange = moins bien),
+les atouts colonne par colonne ; tout est enregistré tout de suite. En partie, un largage de
+classe s'ouvre sur un bandeau de 5 cartes en bas de l'écran.
+
+Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi). Toutes
+les touches se changent dans Réglages › Touches (manette et clavier séparément). Réglages ›
+Qualité graphique : Performance (rendu 3D à 60 %, sans ombres), Équilibrée (75 %), Qualité (100 %).
+
+| | |
+|---|---|
+| ![Classes](docs/captures/31_classes.jpg) | ![Choix d'arme](docs/captures/31b_classe.jpg) |
+| ![Atouts](docs/captures/31c_atouts.jpg) | ![Largage en partie](docs/captures/36_largage.jpg) |
+
 ### Jalon 3 : les règles de Résurgence
 
 On arrive au **lobby** : jouer une partie, s'entraîner au champ de tir, préparer ses **5 classes**

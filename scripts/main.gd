@@ -755,11 +755,10 @@ func _check() -> void:
 	if ar.target_item != crate:
 		_fail("largage : caisse pas proposée (%s)" % ar.interact_label())
 	await _press("interact")
-	if hud._panel_kind != "classe":
+	if hud._panel_kind != "classe" or not hud.largage.is_visible_in_tree() or hud.largage.cards.size() != Loadouts.SLOTS:
 		_fail("largage : pas de choix de classe")
 	else:
-		var buttons := hud._panel_box.get_children().filter(func(n): return n is Button)
-		buttons[0].pressed.emit()
+		hud.largage.cards[0].pressed.emit()
 	var d0 := Loadouts.get_one(0)
 	if ar.current().get("id", "") != d0.principale or int(ar.current().get("rarete", 0)) != Loadouts.RARETE or ar.perks != d0.atouts or player.ui_block:
 		_fail("classe : %s, atouts %s" % [ar.current(), ar.perks])
@@ -888,6 +887,41 @@ func _check() -> void:
 		_fail("écran des touches : %d cases" % hud._binds_grid.get_child_count())
 	hud.close_binds()
 	hud.close_pause()
+
+	# Lobby : écran des classes (choisir une classe, une arme, un atout, rétablir).
+	show_lobby()
+	await _wait(0.1)
+	var ec := lobby.ecran_classes
+	lobby._show_classes(0)
+	await get_tree().process_frame
+	ec._class_cards[2].grab_focus()
+	await get_tree().process_frame
+	if ec._sel != 2 or not ec.visible or lobby._menu.visible:
+		_fail("classes : sélection au focus (%d)" % ec._sel)
+	ec._open_arme("principale")
+	await get_tree().process_frame
+	var other_w: String = "uzi" if Loadouts.get_one(2).principale != "uzi" else "faucon"
+	ec._weapon_cards[other_w].pressed.emit()
+	ec._weapon_cards[other_w].pressed.emit()   # le premier montre, le second équipe
+	await get_tree().process_frame
+	if Loadouts.get_one(2).principale != other_w or ec._view != "liste":
+		_fail("classes : arme non équipée (%s, vue %s)" % [Loadouts.get_one(2).principale, ec._view])
+	ec._open_atouts()
+	await get_tree().process_frame
+	var other_p: String = Loadouts.column(1).filter(func(x): return x != Loadouts.get_one(2).atouts[1])[0]
+	ec._perk_cards[other_p].pressed.emit()
+	if Loadouts.get_one(2).atouts[1] != other_p:
+		_fail("classes : atout non choisi")
+	ec._show("liste")
+	ec._reset_class()
+	if Loadouts.get_one(2) != Loadouts.DEFAUTS[2]:
+		_fail("classes : rétablissement")
+	ec.closed.emit()
+	await get_tree().process_frame
+	if ec.visible or not lobby._menu.visible:
+		_fail("classes : retour au menu")
+	_set_mode("entrainement")
+	player.ui_block = false
 
 	# Lobby : le bouton Réglages ouvre un menu visible, et le refermer ramène au lobby.
 	show_lobby()
@@ -1414,7 +1448,10 @@ func _tour() -> void:
 	lobby._show_classes()
 	await _shot(dir, "31_classes")
 	lobby._edit(0)
+	lobby.ecran_classes._preview_weapon("vipere")
 	await _shot(dir, "31b_classe")
+	lobby.ecran_classes._open_atouts()
+	await _shot(dir, "31c_atouts")
 	await start_partie(0)
 	partie.brume.time_scale = 80.0
 	await _until(func(): return partie.brume.phase >= 3 and partie.brume.closing, 30.0)

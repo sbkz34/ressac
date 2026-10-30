@@ -190,7 +190,10 @@ static func event_name(e: InputEvent) -> String:
 		return "Axe %d%s" % [m.axis, "+" if m.axis_value > 0 else "−"]
 	if e is InputEventKey:
 		var k := e as InputEventKey
-		var code := DisplayServer.keyboard_get_keycode_from_physical(k.physical_keycode) if k.physical_keycode != KEY_NONE else k.keycode
+		var code: Key = k.keycode if k.physical_keycode == KEY_NONE else k.physical_keycode
+		# Disposition du clavier (AZERTY…) : seulement là où le système sait la donner.
+		if k.physical_keycode != KEY_NONE and OS.has_feature("pc") and DisplayServer.get_name() != "headless":
+			code = DisplayServer.keyboard_get_keycode_from_physical(k.physical_keycode)
 		var n := OS.get_keycode_string(code)
 		return {"Space": "Espace", "Shift": "Maj", "Ctrl": "Ctrl", "Escape": "Échap", "Tab": "Tab", "Enter": "Entrée"}.get(n, n)
 	if e is InputEventMouseButton:
