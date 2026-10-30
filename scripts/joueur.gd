@@ -110,6 +110,7 @@ var _fall_peak := 0.0
 var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
 var _hb_on := true
 var _y_t := -1.0               # Y maintenu depuis (négatif : relâché)
+var _ads_toggle := false
 const HOLD_PLATE := 0.25       # au-delà, Y pose des plaques au lieu de changer d'arme
 var _floor_kind := "terre"     # sol sous les pieds : "terre", "dur" ou "eau" (bruit des pas)
 var _stroke := 0.0
@@ -279,7 +280,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var s := LOOK_MOUSE * float(G.settings.sens_mouse)
-		_local.look += Vector2(-event.relative.x * s, -event.relative.y * s)
+		_local.look += Vector2(-event.relative.x * s, -event.relative.y * s * (-1.0 if bool(G.settings.inverser_y) else 1.0))
 	if event.is_action_pressed("drone"):
 		set_drone(etat != Etat.DRONE)
 
@@ -310,8 +311,8 @@ func _process(delta: float) -> void:
 	var assist := arsenal.look_scale()
 	if stick != Vector2.ZERO:
 		var curved := stick * stick.length()   # précis au centre, rapide en bout de course
-		var s := LOOK_PAD * float(G.settings.sens_pad) * delta * assist * lerpf(1.0, 0.55, arsenal.ads)
-		i.look += Vector2(-curved.x * s, curved.y * s * 0.75)
+		var s := LOOK_PAD * float(G.settings.sens_pad) * delta * assist * lerpf(1.0, float(G.settings.sens_ads), arsenal.ads)
+		i.look += Vector2(-curved.x * s, curved.y * s * 0.75 * (-1.0 if bool(G.settings.inverser_y) else 1.0))
 	i.move = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	i.jump = i.jump or Input.is_action_just_pressed("jump")
 	i.crouch = i.crouch or Input.is_action_just_pressed("crouch")
@@ -320,7 +321,18 @@ func _process(delta: float) -> void:
 	i.crouch_held = Input.is_action_pressed("crouch")
 	i.sprint_held = Input.is_action_pressed("sprint")
 	i.fire_held = Input.is_action_pressed("fire")
-	i.ads_held = Input.is_action_pressed("ads")
+	# Viser : maintenir, ou appuyer une fois (réglage).
+	if bool(G.settings.visee_bascule):
+		if Input.is_action_just_pressed("ads"):
+			_ads_toggle = not _ads_toggle
+		if not arsenal.can_use_weapon() or sprinting:
+			_ads_toggle = false
+		i.ads_held = _ads_toggle
+	else:
+		i.ads_held = Input.is_action_pressed("ads")
+	# Sprint automatique : stick poussé à fond vers l'avant.
+	if bool(G.settings.sprint_auto) and i.move.y < -0.9 and not sprinting and etat == Etat.SOL and posture == Posture.DEBOUT:
+		i.sprint = true
 	i.reload = i.reload or Input.is_action_just_pressed("reload")
 	i.swap = i.swap or Input.is_action_just_pressed("swap")
 	i.interact = i.interact or Input.is_action_just_pressed("interact")
@@ -341,8 +353,8 @@ func _process(delta: float) -> void:
 	i.lethal = i.lethal or Input.is_action_just_pressed("lethal")
 	i.tactical = i.tactical or Input.is_action_just_pressed("tactical")
 	if touch and touch.visible:
-		var d := touch.consume_look() * 0.18 * float(G.settings.sens_touch) * assist * lerpf(1.0, 0.6, arsenal.ads)
-		i.look += Vector2(-d.x, -d.y)
+		var d := touch.consume_look() * 0.18 * float(G.settings.sens_touch) * assist * lerpf(1.0, float(G.settings.sens_ads), arsenal.ads)
+		i.look += Vector2(-d.x, -d.y * (-1.0 if bool(G.settings.inverser_y) else 1.0))
 		if touch.move.length() > i.move.length():
 			i.move = touch.move
 		i.jump = i.jump or touch.take("saut")

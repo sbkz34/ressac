@@ -30,6 +30,20 @@ var settings := {
 	"bots": 15,             # adversaires dans une partie (0 à 23)
 	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
 	"qualite": 1,           # 0 performance, 1 équilibrée, 2 qualité (résolution 3D, ombres)
+	"sens_ads": 0.55,       # sensibilité en visant, par rapport à la normale
+	"inverser_y": false,
+	"visee_bascule": false, # viser : maintenir (faux) ou appuyer une fois (vrai)
+	"assistance": 1,        # assistance à la visée : 0 aucune, 1 normale, 2 forte
+	"minicarte_nord": false,  # mini-carte : nord fixe en haut (vrai) ou tourne avec la vue
+	"sprint_auto": false,   # courir dès que le stick est poussé à fond
+	"plaques_toutes": true, # maintenir : poser les plaques d'affilée (faux : une par appui)
+	"vol_general": 0.8,
+	"vol_armes": 0.8,
+	"vol_pas": 0.85,
+	"vol_ui": 0.75,
+	"vol_ambiance": 0.65,
+	"tactile": {},          # boutons tactiles déplacés : nom -> [x, y, taille] (x, y en part de l'écran)
+	"tactile_opacite": 1.0,
 	"touches": {},          # touches changées : "pad:action" / "clavier:action" -> touche
 }
 const SETTINGS_PATH := "user://settings.cfg"
@@ -71,7 +85,10 @@ func _ready() -> void:
 	if not check_mode:
 		_load_settings()
 	apply_bindings()
-	for i in 6:
+	_setup_buses()
+	apply_volumes()
+	settings_changed.connect(apply_volumes)
+	for i in 8:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
@@ -346,12 +363,48 @@ func recent_shots() -> Array:
 	return out
 
 
+# ------------------------------------------------------------------------------------------------
+# Volumes par catégorie (bus audio)
+# ------------------------------------------------------------------------------------------------
+const BUSES := {"Armes": "vol_armes", "Pas": "vol_pas", "Interface": "vol_ui", "Ambiance": "vol_ambiance"}
+
+
+func _setup_buses() -> void:
+	for b in BUSES:
+		if AudioServer.get_bus_index(b) == -1:
+			AudioServer.add_bus()
+			var i := AudioServer.bus_count - 1
+			AudioServer.set_bus_name(i, b)
+			AudioServer.set_bus_send(i, "Master")
+
+
+func apply_volumes() -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(float(settings.vol_general), 0.0001)))
+	for b in BUSES:
+		var i := AudioServer.get_bus_index(b)
+		if i >= 0:
+			AudioServer.set_bus_volume_db(i, linear_to_db(maxf(float(settings[BUSES[b]]), 0.0001)))
+
+
+## Catégorie d'un son (pour son volume).
+static func bus_of(name: String) -> String:
+	if name.begins_with("pas_") or name in ["step", "jump_land", "brasse", "plouf"]:
+		return "Pas"
+	if name.begins_with("marque_") or name in ["killmarker", "hitmarker", "buy", "denied", "armure_brisee", "coeur",
+			"powerup_pick", "box", "perk", "round_start", "round_end"]:
+		return "Interface"
+	if name.begins_with("vent_") or name in ["moteur_avion", "voile", "sortie_avion", "decoy", "ambient", "thunder"]:
+		return "Ambiance"
+	return "Armes"
+
+
 func play_at(name: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 	var s := sound(name)
 	if s == null:
 		return
 	var p := _players3d[_next_3d]
 	_next_3d = (_next_3d + 1) % _players3d.size()
+	p.bus = bus_of(name)
 	p.stream = s
 	p.global_position = pos
 	p.volume_db = volume_db
@@ -365,6 +418,7 @@ func play(name: String, volume_db := 0.0, pitch := 1.0) -> void:
 		return
 	var p := _players[_next_player]
 	_next_player = (_next_player + 1) % _players.size()
+	p.bus = bus_of(name)
 	p.stream = s
 	p.volume_db = volume_db
 	p.pitch_scale = pitch

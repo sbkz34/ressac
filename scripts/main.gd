@@ -67,7 +67,7 @@ func _ready() -> void:
 	lobby.training.connect(start_training)
 	lobby.settings.connect(func():
 		lobby.visible = false
-		hud.open_pause())
+		hud.open_settings(false))
 	_lobby_cam = Camera3D.new()
 	_lobby_cam.far = 2200.0
 	_lobby_cam.fov = 60.0
@@ -881,11 +881,43 @@ func _check() -> void:
 	if G.binding_name("jump", true) != "A" or G.binding_name("use", true) != "X" or G.binding_name("plate", false) != "4":
 		_fail("touches : rétablissement (%s, %s, %s)" % [G.binding_name("jump", true), G.binding_name("use", true), G.binding_name("plate", false)])
 	hud.open_pause()
-	hud.open_binds()
+	hud.open_settings(true)
+	hud.reglages._switch("commandes")
+	hud.reglages.open_binds.emit()
 	await get_tree().process_frame
 	if hud._binds_grid.get_child_count() != 3 * (G.BINDABLE.size() + 1):
 		_fail("écran des touches : %d cases" % hud._binds_grid.get_child_count())
 	hud.close_binds()
+	if not hud.reglages.visible:
+		_fail("touches : pas de retour aux réglages")
+	# Réglages : chaque onglet se construit ; un réglage changé s'applique (volume, sensibilité).
+	for t in EcranReglages.ONGLETS:
+		hud.reglages._switch(t)
+		await get_tree().process_frame
+		if hud.reglages._content.get_child_count() < 4:
+			_fail("réglages : onglet %s vide" % t)
+	hud.reglages._switch("son")
+	await get_tree().process_frame
+	(hud.reglages._first as HSlider).value = 0.5
+	if absf(AudioServer.get_bus_volume_db(0) - linear_to_db(0.5)) > 0.1:
+		_fail("réglages : volume général non appliqué")
+	G.settings.vol_general = 0.8
+	G.apply_volumes()
+	# Disposition tactile : déplacer un bouton l'enregistre.
+	hud.reglages.open_touch_layout.emit()
+	if not hud.touch.editing:
+		_fail("disposition tactile : pas d'édition")
+	hud.touch._edit_sel = "saut"
+	hud.touch._entry("saut")[0] = 0.5
+	hud.touch._resize(1.2)
+	hud.touch.finish_edit()
+	var lay: Dictionary = G.settings.tactile
+	if not lay.has("saut") or absf(float(lay.saut[0]) - 0.5) > 0.001 or float(lay.saut[2]) < 1.15:
+		_fail("disposition tactile : %s" % [lay])
+	G.settings.tactile = {}
+	await get_tree().process_frame
+	hud.reglages.visible = false
+	hud._on_settings_closed()
 	hud.close_pause()
 
 	# Lobby : écran des classes (choisir une classe, une arme, un atout, rétablir).
@@ -957,9 +989,10 @@ func _check() -> void:
 	await _wait(0.1)
 	lobby.settings.emit()
 	await get_tree().process_frame
-	if not hud.visible or not hud._pause.is_visible_in_tree() or hud._frame.visible:
-		_fail("lobby : réglages invisibles (hud %s, menu %s)" % [hud.visible, hud._pause.is_visible_in_tree()])
-	hud.close_pause()
+	if not hud.visible or not hud.reglages.is_visible_in_tree() or hud._frame.visible:
+		_fail("lobby : réglages invisibles (hud %s, réglages %s)" % [hud.visible, hud.reglages.is_visible_in_tree()])
+	hud.reglages.visible = false
+	hud._on_settings_closed()
 	await get_tree().process_frame
 	if hud.visible or not lobby.visible or get_tree().paused:
 		_fail("lobby : retour des réglages (hud %s, lobby %s)" % [hud.visible, lobby.visible])
@@ -1522,6 +1555,16 @@ func _tour() -> void:
 	hud.mode = "partie"
 	hud.open_pause()
 	await _shot(dir, "24_pause")
+	hud.open_settings(true)
+	hud.reglages._switch("son")
+	await _shot(dir, "41_reglages")
+	hud.reglages._switch("commandes")
+	await _shot(dir, "41b_reglages_commandes")
+	hud.reglages.open_touch_layout.emit()
+	await _shot(dir, "42_disposition")
+	hud.touch.finish_edit()
+	hud.reglages.visible = false
+	hud._on_settings_closed()
 	hud.close_pause()
 	# Jalon 4 : les bots (silhouettes, armes en main) et un échange de tirs.
 	show_lobby()

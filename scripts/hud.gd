@@ -185,6 +185,7 @@ func _ready() -> void:
 	add_child(_map)
 	_build_pause()
 	_build_binds()
+	_build_settings()
 	_build_panel()
 
 	G.input_mode_changed.connect(func(_m): _update_help())
@@ -371,6 +372,8 @@ func close_pause() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if (reglages and reglages.visible) or touch.editing:
+		return
 	if _binds.visible:
 		if _capture.is_empty() and (event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel")):
 			close_binds()
@@ -422,23 +425,7 @@ func _build_pause() -> void:
 		close_pause()
 		if player:
 			player.set_drone(not player.is_drone()))
-	_slider("Taille de l'interface", "hud_scale", 0.6, 1.5, 0.05, "%d %%", 100.0)
-	_slider("Marge des bords", "hud_margin", 0.0, 0.1, 0.005, "%d %%", 100.0)
-	_slider("Sensibilité manette", "sens_pad", 0.3, 2.5, 0.05, "%.2f", 1.0)
-	_slider("Sensibilité tactile", "sens_touch", 0.3, 2.5, 0.05, "%.2f", 1.0)
-	_slider("Sensibilité souris", "sens_mouse", 0.3, 2.5, 0.05, "%.2f", 1.0)
-	var fps := CheckButton.new()
-	fps.text = "Afficher les images par seconde"
-	fps.button_pressed = bool(G.settings.show_fps)
-	fps.add_theme_font_size_override("font_size", 20)
-	fps.toggled.connect(func(on: bool): G.set_setting("show_fps", on))
-	_pause_box.add_child(fps)
-	var q_btn: Button = _button("", func(): pass)
-	q_btn.text = _quality_text()
-	q_btn.pressed.connect(func():
-		G.set_setting("qualite", (int(G.settings.qualite) + 1) % 3)
-		q_btn.text = _quality_text())
-	_button("Touches (manette, clavier)", open_binds)
+	_button("Réglages", func(): open_settings(true))
 	_lobby_btn = _button("Retour au lobby", func(): close_pause(); request_lobby.emit())
 	_button("Quitter le jeu", func(): get_tree().quit())
 
@@ -494,6 +481,54 @@ func _quality_text() -> String:
 	return "Qualité graphique : %s" % ["Performance (60 %, sans ombres)", "Équilibrée (75 %)", "Qualité (100 %)"][clampi(int(G.settings.qualite), 0, 2)]
 
 
+# ------------------------------------------------------------------------------------------------
+# Réglages (écran à onglets), depuis la pause ou le lobby
+# ------------------------------------------------------------------------------------------------
+var reglages: EcranReglages
+var _settings_from_pause := false
+
+
+func _build_settings() -> void:
+	reglages = EcranReglages.new()
+	add_child(reglages)
+	reglages.closed.connect(_on_settings_closed)
+	reglages.open_binds.connect(func():
+		reglages.visible = false
+		open_binds())
+	reglages.open_touch_layout.connect(_open_touch_editor)
+	touch.edit_done.connect(func():
+		_frame.visible = mode != "lobby"
+		reglages.open())
+
+
+func open_settings(from_pause := false) -> void:
+	_settings_from_pause = from_pause
+	_pause.visible = false
+	if mode == "lobby":
+		visible = true
+		_frame.visible = false
+	reglages.open()
+
+
+func _on_settings_closed() -> void:
+	_update_help()
+	if _settings_from_pause:
+		_pause.visible = true
+		_first_button.grab_focus.call_deferred()
+	else:
+		_frame.visible = true
+		if mode == "lobby":
+			visible = false
+			request_settings_closed.emit()
+
+
+## Disposition tactile : on voit les boutons par-dessus l'écran de jeu et on les déplace.
+func _open_touch_editor() -> void:
+	reglages.visible = false
+	_frame.visible = true
+	touch.start_edit()
+
+
 func open_binds() -> void:
 	_pause.visible = false
 	_binds.visible = true
@@ -509,9 +544,8 @@ func open_binds() -> void:
 func close_binds() -> void:
 	_capture = {}
 	_binds.visible = false
-	_pause.visible = true
 	_update_help()
-	_first_button.grab_focus.call_deferred()
+	reglages.open()
 
 
 func _fill_binds() -> void:
@@ -1013,7 +1047,9 @@ class MiniMap:
 			return
 		var c := size / 2.0
 		var k := size.x / 2.0 / RANGE              # pixels de l'écran par mètre
-		var yaw := player.rotation.y
+		# Nord fixe (réglage) ou carte qui tourne avec la vue.
+		var north_up := bool(G.settings.get("minicarte_nord", false))
+		var yaw := 0.0 if north_up else player.rotation.y
 		var pp := player.global_position
 		var half := float(G.data.get("monde", 640)) / 2.0
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.16, 0.28))
@@ -1042,7 +1078,8 @@ class MiniMap:
 			draw_arc(sp, 5.0, 0, TAU, 12, Color(0, 0, 0, a * 0.8), 1.0)
 		# Soi-même au centre, tourné vers le haut ; le nord sur le bord.
 		var s := 7.0
-		var tri := PackedVector2Array([c + Vector2(0, -s * 1.4), c + Vector2(s, s), c + Vector2(-s, s)])
+		var rot := -player.rotation.y if north_up else 0.0
+		var tri := PackedVector2Array([c + Vector2(0, -s * 1.4).rotated(rot), c + Vector2(s, s).rotated(rot), c + Vector2(-s, s).rotated(rot)])
 		draw_colored_polygon(tri, Color(0.2, 0.9, 1.0))
 		draw_polyline(PackedVector2Array([tri[0], tri[1], tri[2], tri[0]]), Color(0, 0, 0), 1.5)
 		var north := Vector2(0, -1).rotated(yaw)

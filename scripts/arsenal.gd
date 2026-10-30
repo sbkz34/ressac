@@ -55,6 +55,7 @@ var _exclude: Array[RID] = []
 var _ads_pressed_t := 99.0
 var _was_ads := false
 var _dry := false
+var _plate_wait := false
 
 
 func setup(j: Joueur, hitboxes: Array[Area3D], bot := false) -> void:
@@ -240,7 +241,10 @@ func simulate(i: Intentions, delta: float) -> void:
 		gas_mask = maxf(0.0, gas_mask - delta)
 
 	# Plaques : maintenir pour en mettre une, puis la suivante.
-	if i.plate_held and plates > 0 and sante.armor < sante.armor_max - 0.01 and (allowed or joueur.etat == Joueur.Etat.SOL):
+	# Une plaque par appui (réglage) : il faut relâcher avant la suivante.
+	if not i.plate_held:
+		_plate_wait = false
+	if i.plate_held and not _plate_wait and plates > 0 and sante.armor < sante.armor_max - 0.01 and (allowed or joueur.etat == Joueur.Etat.SOL):
 		if plate_t <= 0.0:
 			reloading = false
 			view.play_anim("swap", plate_time())
@@ -253,6 +257,8 @@ func simulate(i: Intentions, delta: float) -> void:
 				plates -= 1
 				_snd("plank_place", -3.0, 1.3)
 				changed.emit()
+				if not is_bot and not bool(G.settings.get("plaques_toutes", true)):
+					_plate_wait = true
 			plate_t = 0.0
 	else:
 		plate_t = 0.0
@@ -550,8 +556,10 @@ func _auto_pickup() -> void:
 # ------------------------------------------------------------------------------------------------
 func _update_assist() -> void:
 	assist_target = null
-	if not can_use_weapon():
+	var level := int(G.settings.get("assistance", 1))
+	if not can_use_weapon() or level == 0:
 		return
+	var k := 1.5 if level == 2 else 1.0
 	var cam := joueur.cam
 	var fwd := -cam.global_basis.z
 	var best := INF
@@ -564,13 +572,13 @@ func _update_assist() -> void:
 		if dist > 120.0:
 			continue
 		var ang := rad_to_deg(fwd.angle_to(to))
-		var cone := maxf(ASSIST_CONE * 0.6, rad_to_deg(atan(1.2 / dist)))
-		if ang < maxf(cone, SNAP_CONE) and ang < best and _visible(cam.global_position, Bot.aim_point(t)):
+		var cone := maxf(ASSIST_CONE * 0.6 * k, rad_to_deg(atan(1.2 * k / dist)))
+		if ang < maxf(cone, SNAP_CONE * k) and ang < best and _visible(cam.global_position, Bot.aim_point(t)):
 			best = ang
 			assist_target = t
 	# En épaulant : la visée se cale sur la cible proche (comme sur console).
 	if assist_target and _ads_pressed_t < 0.2 and ads > 0.15 and G.input_mode != "kbm":
-		joueur.snap_towards(Bot.aim_point(assist_target), 0.45)
+		joueur.snap_towards(Bot.aim_point(assist_target), 0.6 if level == 2 else 0.45)
 
 
 ## Mannequins et adversaires vivants, au sol ou sous la voile.

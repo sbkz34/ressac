@@ -72,6 +72,8 @@ func _level_text() -> String:
 func show_menu() -> void:
 	visible = true
 	_menu.visible = true
+	bots_button.text = _bots_text()
+	level_button.text = _level_text()
 	_title.visible = true
 	_sub.visible = true
 	ecran_classes.visible = false

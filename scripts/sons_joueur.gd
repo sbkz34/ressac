@@ -18,6 +18,7 @@ func _ready() -> void:
 	_voile = _loop("vent_voile")
 	_coeur = AudioStreamPlayer.new()
 	_coeur.stream = G.sound("coeur")
+	_coeur.bus = "Interface"
 	add_child(_coeur)
 
 
@@ -31,6 +32,7 @@ func _loop(name: String) -> AudioStreamPlayer:
 		w.loop_end = int(w.get_length() * w.mix_rate)
 		p.stream = w
 	p.volume_db = -80.0
+	p.bus = G.bus_of(name)
 	add_child(p)
 	return p
 

@@ -60,9 +60,18 @@ dans les jauges. Les armes trouvées en portent selon leur rareté (rare 2, épi
 les armes de classe ceux choisis à l'**armurier** (aperçu 3D et comparaison en direct). Ils se
 voient sur les armes, en main, au sol et chez les bots.
 
-Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi). Toutes
-les touches se changent dans Réglages › Touches (manette et clavier séparément). Réglages ›
-Qualité graphique : Performance (rendu 3D à 60 %, sans ombres), Équilibrée (75 %), Qualité (100 %).
+Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi).
+
+**Réglages** (lobby et pause), en quatre onglets : Affichage (taille et marges de l'interface,
+qualité graphique — rendu 3D à 60 / 75 / 100 % —, i/s, mini-carte fixe ou tournante), Commandes
+(sensibilités, sensibilité en visant, viser en maintenant ou en appuyant une fois, assistance à la
+visée, axe inversé, **touches** de la manette et du clavier, **disposition tactile** : on déplace
+chaque bouton, on règle sa taille et l'opacité), Son (général, tirs, pas, interface, ambiance), Jeu
+(bots, difficulté, sprint automatique, plaques une à une ou d'affilée).
+
+| | |
+|---|---|
+| ![Réglages](docs/captures/41b_reglages_commandes.jpg) | ![Son](docs/captures/41_reglages.jpg) |
 
 | | |
 |---|---|

@@ -9,6 +9,15 @@ extends Control
 
 signal map_pressed
 signal pause_pressed
+signal edit_done
+
+var editing := false          # disposition : on déplace les boutons et on règle leur taille
+var _layout := {}             # nom -> [x, y, taille] (x, y en part de l'écran)
+var _edit_sel := "tir"
+var _drag := -99              # doigt (ou -2 : souris) qui déplace un bouton
+var _drag_off := Vector2.ZERO
+var _toolbar: HBoxContainer
+const EDIT_NAMES := {"action": "ACTION", "grenade": "GREN.", "fumigene": "FUMI."}
 
 var move := Vector2.ZERO
 var sprint_edge := false
@@ -31,6 +40,9 @@ const NAMES := {"saut": "SAUT", "accroupi": "ACCROUPI", "sprint": "SPRINT", "car
 
 ## Libellé affiché (vide : bouton masqué et inactif).
 func label_of(k: String) -> String:
+	if editing:
+		var n := String(NAMES.get(k, ""))
+		return n if n != "" else String(EDIT_NAMES.get(k, k))
 	return String(labels.get(k, NAMES.get(k, "")))
 
 
@@ -41,6 +53,8 @@ func _ready() -> void:
 
 
 func _on_mode(mode: String) -> void:
+	if editing:
+		return
 	visible = mode == "touch"
 	if not visible:
 		_release_all()
@@ -76,7 +90,18 @@ func held(btn: String) -> bool:
 	return _button_ids.values().has(btn)
 
 
+## Boutons : position par défaut, ou celle choisie dans l'éditeur de disposition.
 func _buttons() -> Dictionary:
+	var d := _default_buttons()
+	var lay: Dictionary = _layout if editing else G.settings.get("tactile", {})
+	for k in lay:
+		if d.has(k) and lay[k] is Array and (lay[k] as Array).size() == 3:
+			var e: Array = lay[k]
+			d[k] = [Vector2(float(e[0]) * size.x, float(e[1]) * size.y), float(d[k][1]) * float(e[2])]
+	return d
+
+
+func _default_buttons() -> Dictionary:
 	var s := size
 	var r := minf(s.x, s.y) * 0.075
 	return {
@@ -110,6 +135,9 @@ func _local(p: Vector2) -> Vector2:
 
 
 func _input(event: InputEvent) -> void:
+	if editing:
+		_edit_input(event)
+		return
 	if not visible or get_tree().paused:
 		return
 	if event is InputEventScreenTouch:
@@ -165,6 +193,12 @@ func _process(_delta: float) -> void:
 
 func _draw() -> void:
 	var font := ThemeDB.fallback_font
+	var op := clampf(float(G.settings.get("tactile_opacite", 1.0)), 0.2, 1.0)
+	if editing:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.05, 0.08, 0.55))
+		draw_string(font, Vector2(0, size.y * 0.5 + 10), "Faire glisser un bouton pour le déplacer · le bouton doré se redimensionne", HORIZONTAL_ALIGNMENT_CENTER, size.x, 20, Color(1, 1, 1, 0.85))
+		draw_circle(Vector2(size.x * 0.2, size.y * 0.72), STICK_R, Color(1, 1, 1, 0.08))
+		draw_string(font, Vector2(size.x * 0.2 - 100, size.y * 0.72 + 8), "zone du stick", HORIZONTAL_ALIGNMENT_CENTER, 200, 18, Color(1, 1, 1, 0.6))
 	if _stick_id != -1:
 		draw_circle(_stick_origin, STICK_R, Color(1, 1, 1, 0.12))
 		draw_arc(_stick_origin, STICK_R, 0, TAU, 40, Color(1, 1, 1, 0.35), 2.0)
@@ -175,7 +209,111 @@ func _draw() -> void:
 		if text == "":
 			continue
 		var on: bool = held(k) or (k == "viser" and ads_on)
-		draw_circle(b[k][0], b[k][1], Color(0, 0, 0, 0.55 if on else 0.32))
-		draw_arc(b[k][0], b[k][1], 0, TAU, 40, Color(1, 1, 1, 0.6), 2.0)
+		draw_circle(b[k][0], b[k][1], Color(0, 0, 0, (0.55 if on else 0.32) * op))
+		var ring := Color(1, 0.84, 0.42) if editing and k == _edit_sel else Color(1, 1, 1, 0.6 * op)
+		draw_arc(b[k][0], b[k][1], 0, TAU, 40, ring, 4.0 if editing and k == _edit_sel else 2.0)
 		var fs := int(b[k][1] * (0.5 if k == "pause" else 0.3))
-		draw_string(font, b[k][0] + Vector2(-b[k][1], fs * 0.35), text, HORIZONTAL_ALIGNMENT_CENTER, b[k][1] * 2, fs, Color(1, 1, 1, 0.9))
+		draw_string(font, b[k][0] + Vector2(-b[k][1], fs * 0.35), text, HORIZONTAL_ALIGNMENT_CENTER, b[k][1] * 2, fs, Color(1, 1, 1, 0.9 * maxf(op, 0.6)))
+
+
+# ------------------------------------------------------------------------------------------------
+# Disposition : déplacer les boutons, régler leur taille et l'opacité
+# ------------------------------------------------------------------------------------------------
+func start_edit() -> void:
+	editing = true
+	visible = true
+	_release_all()
+	_layout = (G.settings.get("tactile", {}) as Dictionary).duplicate(true)
+	_edit_sel = "tir"
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIStyle.box(Color(0.03, 0.06, 0.09, 0.97), Color(1, 1, 1, 0.15), 1, 12))
+	add_child(panel)
+	_toolbar = HBoxContainer.new()
+	_toolbar.add_theme_constant_override("separation", 10)
+	panel.add_child(_toolbar)
+	for pair in [["Plus petit", func(): _resize(0.9)], ["Plus grand", func(): _resize(1.1)],
+			["Opacité", _next_opacity], ["Rétablir", _reset_layout], ["Terminé", finish_edit]]:
+		var b := UIStyle.action(_toolbar, pair[0], pair[0] == "Terminé", 140)
+		b.add_theme_font_size_override("font_size", 19)
+		b.pressed.connect(pair[1])
+	panel.reset_size()
+	panel.position = Vector2((size.x - panel.size.x) * 0.5, size.y * 0.5 - panel.size.y - 40)
+	queue_redraw()
+
+
+func finish_edit() -> void:
+	G.set_setting("tactile", _layout.duplicate(true))
+	editing = false
+	_drag = -99
+	if _toolbar:
+		_toolbar.get_parent().queue_free()
+		_toolbar = null
+	_on_mode(G.input_mode)
+	edit_done.emit()
+
+
+func _entry(k: String) -> Array:
+	if not _layout.has(k):
+		var d: Array = _default_buttons()[k]
+		_layout[k] = [d[0].x / maxf(size.x, 1.0), d[0].y / maxf(size.y, 1.0), 1.0]
+	return _layout[k]
+
+
+func _resize(f: float) -> void:
+	var e := _entry(_edit_sel)
+	e[2] = clampf(float(e[2]) * f, 0.6, 1.8)
+	queue_redraw()
+
+
+func _next_opacity() -> void:
+	var o := float(G.settings.get("tactile_opacite", 1.0))
+	G.set_setting("tactile_opacite", 0.4 if o > 0.9 else (0.7 if o < 0.5 else 1.0))
+	queue_redraw()
+
+
+func _reset_layout() -> void:
+	_layout = {}
+	queue_redraw()
+
+
+func _edit_input(event: InputEvent) -> void:
+	var pos := Vector2.INF
+	var id := -99
+	var pressed := false
+	var released := false
+	if event is InputEventScreenTouch:
+		pos = _local(event.position)
+		id = event.index
+		pressed = event.pressed
+		released = not event.pressed
+	elif event is InputEventScreenDrag:
+		pos = _local(event.position)
+		id = event.index
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		pos = _local(event.position)
+		id = -2
+		pressed = event.pressed
+		released = not event.pressed
+	elif event is InputEventMouseMotion:
+		pos = _local(event.position)
+		id = -2
+	else:
+		return
+	if _toolbar and (_toolbar.get_parent() as Control).get_global_rect().has_point(event.position):
+		return
+	if pressed:
+		var b := _hit_button(pos)
+		if b != "":
+			_edit_sel = b
+			_drag = id
+			_drag_off = _buttons()[b][0] - pos
+			get_viewport().set_input_as_handled()
+	elif released and id == _drag:
+		_drag = -99
+	elif id == _drag and _drag != -99:
+		var e := _entry(_edit_sel)
+		var p := (pos + _drag_off).clamp(Vector2.ZERO, size)
+		e[0] = p.x / maxf(size.x, 1.0)
+		e[1] = p.y / maxf(size.y, 1.0)
+		get_viewport().set_input_as_handled()
+	queue_redraw()
