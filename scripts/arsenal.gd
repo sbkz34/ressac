@@ -20,6 +20,7 @@ const RANGE := 450.0
 const ASSIST_SLOW := 0.55      # ralentissement de la visée près d'une cible
 const ASSIST_CONE := 5.0       # degrés
 const SNAP_CONE := 8.0
+const TRACK := [0.0, 0.45, 0.65]   # part du déplacement de la cible suivie (assistance rotationnelle)
 
 var joueur: Joueur
 var view: WeaponView
@@ -42,6 +43,9 @@ var reload_t := 0.0
 var plate_t := 0.0
 var target_item: Node3D        # butin (arme) ou coffre à portée de main
 var burst_n := 0               # rang du tir dans la rafale (motif de recul)
+var _track_target: Node3D
+var _track_yaw := 0.0
+var _track_pitch := 0.0
 var coffres_ouverts := 0       # statistiques (progression)
 var _since_shot := 9.0
 var assist_target: Node3D
@@ -361,6 +365,10 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 			var m: Array = {"corps": ["marque_corps", -5.0], "tete": ["marque_tete", -4.0], "armure": ["marque_armure", -4.0],
 				"brise": ["armure_brisee", -2.0], "elimination": ["killmarker", -1.0]}.get(best, ["marque_corps", -5.0])
 			_snd(String(m[0]), float(m[1]), randf_range(0.97, 1.03))
+			if best == "elimination":
+				G.vibrer(0.35, 0.55, 0.14)
+			elif best == "brise":
+				G.vibrer(0.45, 0.25, 0.09)
 	# Silencieux : tir étouffé (plus bas, plus aigu) et absent de la mini-carte des autres.
 	var silent := bool(a.get("silencieux", false))
 	if silent:
@@ -369,6 +377,9 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 		_snd(String(a.son), -5.0, randf_range(0.96, 1.04), true)
 		G.report_shot(joueur)
 	view.shot(float(a.recul))
+	if not is_bot:
+		var rc := float(a.recul)
+		G.vibrer(0.12 + rc * 0.05, rc * 0.07, 0.045 + rc * 0.012)
 	_bloom = minf(_bloom + 0.35 * float(a.recul), 4.0)
 	# Recul : la visée monte et dérive selon le motif propre à l'arme (le même à chaque rafale,
 	# donc on apprend à le compenser), plus un peu de hasard.
@@ -614,6 +625,21 @@ func _update_assist() -> void:
 	# En épaulant : la visée se cale sur la cible proche (comme sur console).
 	if assist_target and _ads_pressed_t < 0.2 and ads > 0.15 and G.input_mode != "kbm":
 		joueur.snap_towards(Bot.aim_point(assist_target), 0.6 if level == 2 else 0.45)
+	# Assistance rotationnelle : quand on se déplace ou qu'on vise, la vue suit en partie le
+	# déplacement de la cible par rapport à soi (on garde la cible sous le réticule en strafant).
+	if assist_target and assist_target == _track_target and joueur.aim_input and G.input_mode != "kbm":
+		var to2: Vector3 = Bot.aim_point(assist_target) - cam.global_position
+		var yaw_t := atan2(-to2.x, -to2.z)
+		var pitch_t := atan2(to2.y, Vector2(to2.x, to2.z).length())
+		var dyaw := rad_to_deg(wrapf(yaw_t - _track_yaw, -PI, PI))
+		var dpitch := rad_to_deg(pitch_t - _track_pitch)
+		var kr: float = TRACK[level] * (1.0 if ads > 0.5 else 0.7)
+		joueur.turn(Vector2(clampf(dyaw * kr, -3.0, 3.0), clampf(dpitch * kr, -2.0, 2.0)))
+	_track_target = assist_target
+	if assist_target:
+		var to3: Vector3 = Bot.aim_point(assist_target) - cam.global_position
+		_track_yaw = atan2(-to3.x, -to3.z)
+		_track_pitch = atan2(to3.y, Vector2(to3.x, to3.z).length())
 
 
 ## Mannequins et adversaires vivants, au sol ou sous la voile.
@@ -631,13 +657,14 @@ func _visible(from: Vector3, to: Vector3) -> bool:
 	return joueur.get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 
-## Ralentissement de la visée quand le réticule passe sur une cible.
+## Ralentissement de la visée près d'une cible, progressif (le plus fort sous le réticule).
 func look_scale() -> float:
 	if assist_target == null or G.input_mode == "kbm":
 		return 1.0
 	var to: Vector3 = Bot.aim_point(assist_target) - joueur.cam.global_position
 	var ang := rad_to_deg((-joueur.cam.global_basis.z).angle_to(to))
-	return ASSIST_SLOW if ang < ASSIST_CONE else 1.0
+	var slow := ASSIST_SLOW - (0.1 if int(G.settings.get("assistance", 1)) == 2 else 0.0)
+	return lerpf(slow, 1.0, smoothstep(ASSIST_CONE * 0.3, ASSIST_CONE * 1.4, ang))
 
 
 func _process(delta: float) -> void:

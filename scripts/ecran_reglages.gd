@@ -211,6 +211,13 @@ func _affichage() -> void:
 
 func _commandes() -> void:
 	_slider("Sensibilité manette", "Vitesse de rotation au stick droit.", "sens_pad", 0.3, 2.5, 0.05, _x)
+	_choice("Courbe de réponse (manette)", "Dynamique : précise au centre, rapide au bord. Linéaire : proportionnelle au stick.", "courbe",
+		["dynamique", "standard", "lineaire"], ["Dynamique", "Standard (lente au centre)", "Linéaire"])
+	_slider("Zone morte du stick droit", "La plus petite possible sans que la vue dérive toute seule.", "zone_morte", 0.0, 0.25, 0.01, _pct)
+	_slider("Sensibilité verticale", "Par rapport à l'horizontale.", "sens_vert", 0.5, 1.5, 0.05, _x)
+	_choice("Accélération en bout de course", "Stick poussé à fond : la vue tourne de plus en plus vite (pour les demi-tours).", "accel_pad",
+		[true, false], ["Oui", "Non"])
+	_choice("Vibrations de la manette", "Tirs, touches, éliminations, dégâts reçus, réceptions.", "vibrations", [true, false], ["Oui", "Non"])
 	_slider("Sensibilité en visant", "Par rapport à la sensibilité normale.", "sens_ads", 0.3, 1.0, 0.05, _x)
 	_slider("Sensibilité tactile", "Glisser à droite de l'écran.", "sens_touch", 0.3, 2.5, 0.05, _x)
 	_slider("Sensibilité souris", "", "sens_mouse", 0.3, 2.5, 0.05, _x)

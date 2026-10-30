@@ -243,9 +243,10 @@ func attach(p: Joueur) -> void:
 	p.arsenal.notice.connect(notify)
 	p.arsenal.shop_requested.connect(open_shop)
 	p.arsenal.loadout_requested.connect(open_loadout_choice)
-	p.sante.damaged.connect(func(_a, _z, on_armor: bool, broken: bool, _k):
+	p.sante.damaged.connect(func(amount: float, _z, on_armor: bool, broken: bool, _k):
 		var by := p.sante.last_attacker as Node3D
 		if by and is_instance_valid(by) and by != p and p.sante.last_cause in ["balle", "grenade"]:
+			G.vibrer(0.2, clampf(amount / 60.0, 0.15, 0.8), 0.12)
 			_cross.add_damage(by.global_position)
 			_hurt.flash()
 			# Son de sa propre armure qui encaisse ou qui cède.

@@ -12,6 +12,7 @@ const L_HITBOX := 4    # zones de touche des combattants (tête, torse, jambes)
 var input_mode := "kbm"   # "kbm", "pad" ou "touch"
 var tour_mode := false
 var check_mode := false
+var pad_device := 0             # dernière manette utilisée (vibrations)
 var bake_nav := false
 var icons_dir := ""             # --icones=DIR : rendus des armes (profil, fond transparent)
 var perf_mode := false         # --perf : mesures de rendu à quelques points de vue (avec écran)
@@ -28,6 +29,11 @@ var settings := {
 	"sens_mouse": 1.0,
 	"show_fps": true,
 	"mesures": false,
+	"courbe": "dynamique",      # manette : dynamique, standard, lineaire
+	"zone_morte": 0.07,         # zone morte du stick droit
+	"sens_vert": 0.85,          # sensibilité verticale (par rapport à l'horizontale)
+	"accel_pad": true,          # accélération quand le stick droit est poussé à fond
+	"vibrations": true,
 	"bots": 15,             # adversaires dans une partie (0 à 23)
 	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
 	"qualite": 1,           # 0 performance, 1 équilibrée, 2 qualité (résolution 3D, ombres)
@@ -488,8 +494,9 @@ func _setup_input() -> void:
 	_add("drone"); _key("drone", KEY_F9)
 	# Combat : RT tirer, LT viser, X ramasser ou recharger, Y changer d'arme, croix haut plaque,
 	# RB grenade, LB fumigène.
-	_add("fire", 0.3); _mouse("fire", MOUSE_BUTTON_LEFT); _axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
-	_add("ads", 0.3); _mouse("ads", MOUSE_BUTTON_RIGHT); _axis("ads", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	# Gâchettes sensibles : le tir part dès le début de la course.
+	_add("fire", 0.12); _mouse("fire", MOUSE_BUTTON_LEFT); _axis("fire", JOY_AXIS_TRIGGER_RIGHT, 1.0)
+	_add("ads", 0.15); _mouse("ads", MOUSE_BUTTON_RIGHT); _axis("ads", JOY_AXIS_TRIGGER_LEFT, 1.0)
 	# Manettes dont les gâchettes sont de simples boutons (Android : L2 / R2 = boutons 15 / 16).
 	_btn("ads", JOY_BUTTON_MISC1); _btn("fire", JOY_BUTTON_PADDLE1)
 	_add("reload"); _key("reload", KEY_R)
@@ -515,8 +522,17 @@ func _setup_input() -> void:
 		_btn(pair[0], pair[1])
 
 
+## Vibration de la manette utilisée (si elle en est capable et si le réglage est activé).
+func vibrer(faible: float, fort: float, duree: float) -> void:
+	if input_mode != "pad" or not bool(settings.get("vibrations", true)) or check_mode:
+		return
+	Input.start_joy_vibration(pad_device, clampf(faible, 0.0, 1.0), clampf(fort, 0.0, 1.0), duree)
+
+
 func _input(event: InputEvent) -> void:
 	var mode := input_mode
+	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		pad_device = event.device
 	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and abs(event.axis_value) > 0.4):
 		mode = "pad"
 	elif event is InputEventScreenTouch or event is InputEventScreenDrag:

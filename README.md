@@ -132,6 +132,15 @@ voient sur les armes, en main, au sol et chez les bots.
 
 Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi).
 
+**Visée à la manette** : la vue est tournée et la caméra placée à chaque image (et non au rythme
+de la physique, 60 fois par seconde), ce qui supprime une à deux images de retard sur un écran à
+120 Hz. Courbe de réponse au choix (Dynamique, précise au centre ; Standard ; Linéaire), zone morte
+du stick droit réglable (7 % par défaut), sensibilité verticale séparée, accélération quand le
+stick est poussé à fond, gâchettes sensibles dès le début de la course. L'assistance à la visée
+ralentit progressivement près d'une cible et la suit en partie quand on se déplace (assistance
+rotationnelle). Vibrations (tirs selon l'arme, touches, éliminations, dégâts reçus, réceptions),
+désactivables.
+
 **Réglages** (lobby et pause), en quatre onglets : Affichage (taille et marges de l'interface,
 qualité graphique — rendu 3D à 60 / 75 / 100 % —, i/s, mini-carte fixe ou tournante), Commandes
 (sensibilités, sensibilité en visant, viser en maintenant ou en appuyant une fois, assistance à la

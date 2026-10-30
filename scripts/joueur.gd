@@ -57,7 +57,9 @@ const FALL_SAFE := 15.0         # vitesse de chute sans dégâts (≈ 6 m)
 const FALL_DAMAGE := 9.0        # points de vie par m/s au-delà
 const DRONE_SPEED := 22.0
 const DRONE_FAST := 65.0
-const LOOK_PAD := 150.0
+const LOOK_PAD := 165.0       # degrés par seconde, stick à fond (avant l'accélération)
+const PAD_OUTER := 0.92       # zone morte extérieure : le maximum est atteint un peu avant le bord
+const PAD_BOOST := 0.7        # accélération en bout de course (+70 % au plus, à l'horizontale)
 const LOOK_MOUSE := 0.12
 const BASE_FOV := 78.0
 const HEIGHTS := {Posture.DEBOUT: 1.8, Posture.ACCROUPI: 1.2, Posture.COUCHE: 0.8}
@@ -113,6 +115,9 @@ var _step := 0.0
 var _fall_peak := 0.0
 var _sway_t := 0.0
 var _sway_amp := 0.0
+var _cam_sway := Vector2.ZERO          # balancement en visée (radians), ajouté à la caméra
+var _edge_t := 0.0                     # temps passé le stick droit poussé à fond
+var aim_input := false                 # le joueur bouge ou vise (assistance rotationnelle)
 var _steady := 0.0
 var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
 var _hb_on := true
@@ -146,6 +151,11 @@ func _ready() -> void:
 	cam.far = 2200.0
 	head.add_child(cam)
 	cam.current = not is_bot
+	if not is_bot:
+		# La caméra du joueur est placée à chaque image (pas seulement aux pas de physique) : la
+		# visée répond sans attendre, à 120 i/s comme à 60.
+		cam.top_level = true
+		cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_make_canopy()
 	sante = Sante.new()
 	sante.name = "Sante"
@@ -188,6 +198,8 @@ func spawn_at(p: Vector3, yaw: float) -> void:
 	rotation.y = _yaw
 	head.rotation = Vector3.ZERO
 	canopy.visible = false
+	reset_physics_interpolation()
+	_place_cam(false)
 
 
 func _set_etat(e: int) -> void:
@@ -276,6 +288,7 @@ func look_at_point(point: Vector3) -> void:
 	rotation.y = _yaw
 	head.rotation.x = _pitch
 	_snap = Vector2.ZERO
+	_place_cam(false)
 
 
 # ------------------------------------------------------------------------------------------------
@@ -302,8 +315,41 @@ func _snd(name: String, vol := 0.0, pitch := 1.0) -> void:
 		G.play_at(name, global_position + Vector3(0, 0.3, 0), vol + 6.0, pitch)
 
 
+## Caméra du joueur : position du corps (interpolée entre deux pas de physique pour l'image),
+## orientation de la visée telle qu'elle est maintenant.
+func _place_cam(interp: bool) -> void:
+	if is_bot or cam == null or not is_inside_tree():
+		return
+	var base := get_global_transform_interpolated() if interp else global_transform
+	cam.global_transform = Transform3D(Basis.from_euler(Vector3(_pitch + _cam_sway.x, _yaw + _cam_sway.y, deg_to_rad(_roll))),
+		base.origin + Vector3(0, head.position.y, 0))
+
+
+## Rotation de la vue (degrés), appliquée tout de suite.
+func turn(d: Vector2) -> void:
+	_yaw += deg_to_rad(d.x)
+	_pitch = clampf(_pitch + deg_to_rad(d.y), deg_to_rad(-88), deg_to_rad(88))
+
+
+## Stick droit → rotation (degrés par seconde, avant sensibilité) : zones mortes intérieure et
+## extérieure, courbe de réponse.
+static func pad_curve(stick: Vector2, deadzone: float, courbe: String) -> Vector2:
+	var l := stick.length()
+	if l <= deadzone:
+		return Vector2.ZERO
+	var mag := clampf((l - deadzone) / maxf(PAD_OUTER - deadzone, 0.05), 0.0, 1.0)
+	var c := mag
+	match courbe:
+		"dynamique": c = pow(mag, 1.6)
+		"standard": c = mag * mag
+	return stick / l * c
+
+
 func _process(delta: float) -> void:
-	if is_bot or get_tree().paused:
+	if is_bot:
+		return
+	_place_cam(true)
+	if get_tree().paused:
 		return
 	var i := _local
 	if ui_block:
@@ -314,13 +360,20 @@ func _process(delta: float) -> void:
 		i.jump_held = false
 		i.crouch_held = false
 		return
-	var stick := Input.get_vector("look_left", "look_right", "look_down", "look_up")
+	# Stick droit : lu sans zone morte (on applique la nôtre), courbe, accélération au bord.
+	var stick := Input.get_vector("look_left", "look_right", "look_down", "look_up", 0.0)
 	var assist := arsenal.look_scale()
-	if stick != Vector2.ZERO:
-		var curved := stick * stick.length()   # précis au centre, rapide en bout de course
+	var curved := pad_curve(stick, float(G.settings.zone_morte), String(G.settings.courbe))
+	if stick.length() > 0.95 and absf(stick.x) > 0.6 and bool(G.settings.accel_pad):
+		_edge_t += delta
+	else:
+		_edge_t = 0.0
+	if curved != Vector2.ZERO:
+		var boost := 1.0 + PAD_BOOST * clampf((_edge_t - 0.12) / 0.3, 0.0, 1.0) * (1.0 - arsenal.ads)
 		var s := LOOK_PAD * float(G.settings.sens_pad) * delta * assist * lerpf(1.0, float(G.settings.sens_ads), arsenal.ads)
-		i.look += Vector2(-curved.x * s, curved.y * s * 0.75 * (-1.0 if bool(G.settings.inverser_y) else 1.0))
+		i.look += Vector2(-curved.x * s * boost, curved.y * s * float(G.settings.sens_vert) * (-1.0 if bool(G.settings.inverser_y) else 1.0))
 	i.move = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	aim_input = curved != Vector2.ZERO or i.move.length() > 0.2
 	i.jump = i.jump or Input.is_action_just_pressed("jump")
 	i.crouch = i.crouch or Input.is_action_just_pressed("crouch")
 	i.sprint = i.sprint or Input.is_action_just_pressed("sprint")
@@ -379,6 +432,13 @@ func _process(delta: float) -> void:
 		i.plate_held = i.plate_held or touch.held("plaque")
 		i.lethal = i.lethal or touch.take("grenade")
 		i.tactical = i.tactical or touch.take("fumigene")
+		aim_input = aim_input or d != Vector2.ZERO or touch.move.length() > 0.2
+	# La vue tourne tout de suite (le corps suit au pas de physique suivant).
+	if i.look != Vector2.ZERO:
+		arsenal.view.add_sway(i.look)
+		turn(i.look)
+		i.look = Vector2.ZERO
+		_place_cam(true)
 
 
 func _look(d: Vector2) -> void:
@@ -393,8 +453,8 @@ func _look(d: Vector2) -> void:
 func _physics_process(delta: float) -> void:
 	var i := scripted if scripted else _local
 	_look(i.look)
-	if not is_bot:
-		arsenal.view.add_sway(i.look)
+	if scripted:
+		aim_input = i.move.length() > 0.2
 	tac_cooldown = maxf(0.0, tac_cooldown - delta)
 	since_slide += delta
 	match etat:
@@ -406,6 +466,7 @@ func _physics_process(delta: float) -> void:
 		Etat.GLISSADE: _sim_glissade(i, delta)
 		Etat.TYROLIENNE: _sim_tyrolienne(i, delta)
 		_: _sim_sol(i, delta)
+	_place_cam(false)     # les tirs partent de la visée actuelle
 	arsenal.simulate(i, delta)
 	if _snap != Vector2.ZERO:
 		var step := _snap * minf(1.0, 25.0 * delta)
@@ -549,6 +610,8 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 	if is_on_floor() and not on_floor:
 		if _fall_peak > 2.0:
 			arsenal.view.land(_fall_peak)
+			if not is_bot and _fall_peak > 7.0:
+				G.vibrer(0.2, 0.35, 0.09)
 		if _fall_peak > 9.0:
 			_snd("jump_land", -6.0)
 			landed.emit()
@@ -974,8 +1037,8 @@ func _update_camera(delta: float) -> void:
 	elif posture == Posture.COUCHE:
 		amp *= 0.4
 	_sway_amp = lerpf(_sway_amp, amp, minf(1.0, 4.0 * delta))
-	cam.rotation = Vector3(sin(_sway_t * 1.3) * 0.6 + sin(_sway_t * 0.55) * 0.4,
-		sin(_sway_t * 0.9) * 0.7 + sin(_sway_t * 0.37 + 1.0) * 0.3, 0) * deg_to_rad(_sway_amp)
+	_cam_sway = Vector2(sin(_sway_t * 1.3) * 0.6 + sin(_sway_t * 0.55) * 0.4,
+		sin(_sway_t * 0.9) * 0.7 + sin(_sway_t * 0.37 + 1.0) * 0.3) * deg_to_rad(_sway_amp)
 
 
 # ------------------------------------------------------------------------------------------------

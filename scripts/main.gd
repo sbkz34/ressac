@@ -852,6 +852,7 @@ func _check() -> void:
 	# ---------------------------------------------------------------------------------------
 	# Jalon 4 : bots
 	# ---------------------------------------------------------------------------------------
+	await _check_manette()
 	var bot_stats := await _check_bots()
 
 	# Manette : Y maintenu pose une plaque, Y bref change d'arme (par les vraies commandes).
@@ -1046,6 +1047,72 @@ func _check() -> void:
 		print("[check] OK (glissade %.1f m/s, cancel %.1f m/s, escalier %.1f m, parachute ouvert à %.0f m, Faucon %d balles, %d objets au sol)" % [slide_speed, cancel_speed, climbed, opened_at, killed_in, pillage.items.size()])
 		print("[check] bots : %s" % bot_stats)
 	get_tree().quit(0 if _errors.is_empty() else 1)
+
+
+## Manette : courbes de réponse et zones mortes, visée appliquée à chaque image (la caméra suit
+## tout de suite), accélération en bout de course, assistance rotationnelle en se déplaçant.
+func _check_manette() -> void:
+	# Courbes.
+	for c in ["dynamique", "standard", "lineaire"]:
+		if Joueur.pad_curve(Vector2(0.05, 0), 0.07, c) != Vector2.ZERO or absf(Joueur.pad_curve(Vector2(1, 0), 0.07, c).x - 1.0) > 0.001:
+			_fail("courbe %s : zones mortes" % c)
+		var prev := 0.0
+		for k in range(8, 100, 4):
+			var v := Joueur.pad_curve(Vector2(k / 100.0, 0), 0.07, c).x
+			if v < prev:
+				_fail("courbe %s : pas croissante" % c)
+			prev = v
+	var mid := Vector2(0.4, 0)
+	if not (Joueur.pad_curve(mid, 0.07, "standard").x < Joueur.pad_curve(mid, 0.07, "dynamique").x and Joueur.pad_curve(mid, 0.07, "dynamique").x < Joueur.pad_curve(mid, 0.07, "lineaire").x):
+		_fail("courbes mal ordonnées")
+	# Le vrai stick : la vue (et la caméra) tourne dès l'image suivante, puis accélère au bord.
+	_set_mode("entrainement")
+	_spawn_at_range()
+	player.scripted = null
+	await _wait(0.2)
+	G.input_mode = "pad"
+	var y0 := player._yaw
+	Input.action_press("look_left", 1.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var y1 := player._yaw
+	var cam_yaw := atan2(-(-player.cam.global_basis.z).x, -(-player.cam.global_basis.z).z)
+	if absf(y1 - y0) < 0.001 or absf(wrapf(cam_yaw - y1, -PI, PI)) > 0.002:
+		_fail("visée : la caméra ne suit pas tout de suite (%.4f → %.4f, caméra %.4f)" % [y0, y1, cam_yaw])
+	await _wait(0.1)
+	var a0 := player._yaw
+	await _wait(0.2)
+	var early := (player._yaw - a0) / 0.2
+	await _wait(0.5)
+	var a1 := player._yaw
+	await _wait(0.2)
+	var late := (player._yaw - a1) / 0.2
+	Input.action_release("look_left")
+	if late < early * 1.4:
+		_fail("accélération en bout de course : %.1f puis %.1f °/s" % [rad_to_deg(early), rad_to_deg(late)])
+	# Assistance rotationnelle : en se déplaçant de côté, la vue suit le mannequin.
+	var err := []
+	for level in [0, 1]:
+		G.settings.assistance = level
+		_spawn_at_range()
+		var dummy: Node3D = null
+		for t in pillage.targets:
+			if (t as Cible).alive() and (dummy == null or t.global_position.distance_to(player.global_position) < dummy.global_position.distance_to(player.global_position)):
+				dummy = t
+		player.scripted = Intentions.new()
+		player.look_at_point(Bot.aim_point(dummy))
+		await _wait(0.3)
+		player.scripted.move = Vector2(1, 0)
+		await _wait(0.45)
+		player.scripted.move = Vector2.ZERO
+		var to: Vector3 = Bot.aim_point(dummy) - player.cam.global_position
+		err.append(rad_to_deg((-player.cam.global_basis.z).angle_to(to)))
+	G.settings.assistance = 1
+	player.scripted = null
+	if err[1] > err[0] * 0.75:
+		_fail("assistance rotationnelle : écart %.2f° sans, %.2f° avec" % [err[0], err[1]])
+	G.input_mode = "kbm"
+	print("[check] manette : %.0f puis %.0f °/s au bord, écart en strafant %.1f° sans assistance, %.1f° avec" % [rad_to_deg(early), rad_to_deg(late), err[0], err[1]])
 
 
 ## Progression : niveaux, expérience d'une partie, défis, camouflages (sur l'arme en main),
