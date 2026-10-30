@@ -78,6 +78,24 @@ chercher le coffre ou guetter un moment, puis redescendent.
 |---|---|
 | ![Tyrolienne du Phare](docs/captures/45_tyrolienne.jpg) | ![Au sommet du Phare](docs/captures/47_sommet_phare.jpg) |
 
+### Caméra de la mort et ressenti des armes
+
+Éliminé, on **suit celui qui vous a eu**, par-dessus son épaule, pendant l'attente du
+redéploiement : son nom, son arme, la distance, ce qu'il lui reste de vie et d'armure. S'il tombe
+à son tour, la caméra passe à celui qui l'a abattu.
+
+Chaque arme a son **motif de recul** : la même dérive à chaque rafale (le Faucon part à droite
+puis revient à gauche, l'Uzi zigzague, la Titan tire à gauche…), qu'on apprend à compenser ; les
+premiers tirs sont plus doux. En visée épaulée, la **visée balance** un peu (beaucoup pour
+l'Aiguille, peu pour une mitraillette) et se calme si l'on reste immobile un instant, accroupi ou
+couché ; la crosse stable la réduit. L'arme vit davantage : elle traîne derrière les mouvements de
+la vue, penche quand on se déplace de côté, plonge à la réception d'un saut, se balance au sprint,
+respire au repos et tressaute de côté au tir.
+
+| | |
+|---|---|
+| ![Caméra de la mort](docs/captures/48_camera_mort.jpg) | |
+
 ### Classes, commandes et réglages
 
 Au lobby, l'écran **Classes** montre les 5 classes avec le rendu de leurs armes (les vrais

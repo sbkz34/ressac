@@ -19,6 +19,12 @@ var _kick_rot := 0.0
 var _bob := 0.0
 var _sway := Vector2.ZERO
 var _flash_t := 0.0
+var _land := 0.0          # creux à la réception d'un saut ou d'une chute
+var _land_v := 0.0
+var _roll_kick := 0.0     # recul : petite rotation de côté
+var _breath := 0.0
+var strafe := 0.0         # vitesse latérale (m/s, + à droite) : l'arme penche un peu
+var vertical := 0.0       # vitesse verticale : l'arme flotte en l'air
 var _anim := ""          # "", "reload", "swap", "knife", "drink"
 var _anim_t := 0.0
 var _anim_len := 1.0
@@ -323,6 +329,7 @@ func shot(kick: float, guns := 1) -> void:
 	_flash_two = guns >= 2
 	_kick = min(_kick + 0.03 + kick * 0.01, 0.12)
 	_kick_rot = min(_kick_rot + 0.04 + kick * 0.02, 0.35)
+	_roll_kick = clampf(_roll_kick + randf_range(-1.0, 1.0) * (0.02 + kick * 0.01), -0.12, 0.12)
 	_flash_t = 0.05
 	_flash.rotation.z = randf() * TAU
 	# Smaller, dimmer flash when aiming: it sits right in front of the eye.
@@ -340,9 +347,15 @@ func muzzle_global(left := false) -> Vector3:
 	return global_position
 
 
+## Mouvement de la vue (degrés) : l'arme traîne un peu derrière, puis revient.
 func add_sway(look_delta: Vector2) -> void:
-	_sway += look_delta * 0.002
-	_sway = _sway.limit_length(0.08)
+	_sway -= look_delta * 0.006
+	_sway = _sway.limit_length(0.09)
+
+
+## Réception : l'arme plonge puis remonte, d'autant plus que la chute était rapide.
+func land(speed: float) -> void:
+	_land_v -= clampf(speed * 0.012, 0.02, 0.12) * 10.0
 
 
 func hip_pos() -> Vector3:
@@ -381,15 +394,34 @@ func update_view(delta: float, speed: float, sprinting: bool, on_floor: bool) ->
 	if sprinting:
 		base += Vector3(-0.05, -0.04, 0.05)
 		rot += Vector3(-0.25, 0.6, 0.15)
+		# Au sprint, l'arme se balance plus franchement d'un côté à l'autre.
+		rot.z += sin(_bob) * 0.06
+	# Respiration au repos (très discrète en visant).
+	_breath += delta
+	var still := 1.0 - clampf(speed / 3.0, 0.0, 1.0)
+	base.y += sin(_breath * 1.6) * 0.004 * still * (1.0 - ads * 0.7)
+	rot.x += sin(_breath * 0.8) * 0.01 * still * (1.0 - ads * 0.8)
+	# Déplacement latéral : l'arme penche ; en l'air elle flotte.
+	rot.z += clampf(-strafe * 0.018, -0.1, 0.1) * (1.0 - ads * 0.7)
+	if not on_floor:
+		base.y += clampf(-vertical * 0.004, -0.04, 0.04)
+	# Réception (ressort amorti).
+	_land_v += (-_land * 120.0 - _land_v * 14.0) * delta
+	_land += _land_v * delta
+	base.y += _land * (1.0 - ads * 0.6)
+	rot.x += _land * 1.5 * (1.0 - ads * 0.6)
 	# Recoil.
 	_kick = move_toward(_kick, 0.0, delta * 0.6)
 	_kick_rot = move_toward(_kick_rot, 0.0, delta * 3.0)
+	_roll_kick = move_toward(_roll_kick, 0.0, delta * 0.8)
 	base.z += _kick
 	rot.x += _kick_rot
+	rot.z += _roll_kick
 	# Sway follows the look motion and settles back.
 	_sway = _sway.lerp(Vector2.ZERO, clamp(delta * 8.0, 0.0, 1.0))
-	rot.y += _sway.x * (1.0 - ads * 0.8)
-	rot.x += _sway.y * (1.0 - ads * 0.8)
+	rot.y += _sway.x * (1.0 - ads * 0.7)
+	rot.x += _sway.y * (1.0 - ads * 0.7)
+	rot.z += _sway.x * 0.6 * (1.0 - ads * 0.7)
 	# One-shot animations.
 	if _anim != "":
 		_anim_t += delta

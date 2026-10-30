@@ -11,6 +11,43 @@ extends RefCounted
 
 const ZONES := {"tete": 1.4, "torse": 1.0, "jambes": 0.8}
 
+## Motifs de recul : dérive latérale tir après tir (multipliée par la force du recul), et montée
+## qui s'accentue sur les premiers tirs. Le motif se répète au-delà de sa longueur.
+const MOTIFS := {
+	"faucon": [0.0, 0.25, 0.4, 0.35, 0.15, -0.1, -0.35, -0.45, -0.3, 0.0, 0.3, 0.45],
+	"titan": [0.0, -0.2, -0.35, -0.3, -0.1, 0.15, 0.3, 0.25, 0.05, -0.15],
+	"vipere": [0.0, 0.3, -0.2, 0.35, -0.3, 0.25, -0.35, 0.3, -0.2, 0.35],
+	"ouragan": [0.0, -0.15, -0.3, -0.4, -0.25, 0.1, 0.35, 0.45, 0.2, -0.1],
+	"uzi": [0.0, 0.45, -0.4, 0.5, -0.5, 0.35, -0.45, 0.5, -0.35, 0.45],
+	"p9": [0.0, 0.2, -0.15, 0.25],
+	"taureau": [0.0, -0.3, 0.2],
+	"k14": [0.0, 0.25, 0.1, -0.2],
+	"aiguille": [0.0],
+	"grele": [0.0, 0.2],
+}
+## Montée du recul selon le rang dans la rafale (les premiers tirs sont plus doux).
+const MONTEE := [0.75, 0.85, 1.0, 1.1, 1.18, 1.22, 1.25]
+## Balancement de la visée épaulée (degrés) par type d'arme : les armes lourdes et longues bougent.
+const BALANCEMENT := {"Fusil de précision": 0.32, "Fusil tactique": 0.18, "Mitrailleuse": 0.14,
+	"Fusil d'assaut": 0.08, "Fusil à pompe": 0.06, "Mitraillette": 0.05, "Pistolet": 0.07}
+
+
+## Recul du tir de rang `n` dans la rafale : (dérive latérale, facteur de montée).
+static func recul_motif(id: String, n: int) -> Vector2:
+	var m: Array = MOTIFS.get(id, [0.0])
+	return Vector2(float(m[n % m.size()]), float(MONTEE[mini(n, MONTEE.size() - 1)]))
+
+
+## Amplitude du balancement en visée pour cette arme (degrés).
+static func balancement(w: Dictionary) -> float:
+	if w.is_empty():
+		return 0.0
+	var b := float(BALANCEMENT.get(String(info(String(w.id)).type), 0.06))
+	if w.get("acc", []).has("crosse_stable"):
+		b *= 0.7
+	return b
+
+
 const MUNITIONS := {
 	"pistolet": {"nom": "Balles de pistolet", "max": 120, "lot": 30, "couleur": Color(0.85, 0.75, 0.35)},
 	"mitraillette": {"nom": "Balles de mitraillette", "max": 240, "lot": 60, "couleur": Color(0.35, 0.6, 0.95)},

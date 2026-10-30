@@ -1212,6 +1212,46 @@ func _check_contrats() -> String:
 	await _until(func(): return victim.sante.dead, 6.0)
 	if not victim.sante.dead or victim.sante.last_attacker != player:
 		_fail("frappe : cible %s, %.0f PV, par %s" % [victim.sante.dead, victim.sante.hp, victim.sante.last_attacker])
+	# Recul : le rang dans la rafale suit les tirs et repart de zéro après une pause.
+	await _until(func(): return bots[0].etat == Joueur.Etat.SOL and bots[1].etat == Joueur.Etat.SOL, 40.0)
+	player.scripted = Intentions.new()
+	ar.slots = [Armes.nouvelle("faucon", 0, []), {}]
+	ar.cur = 0
+	ar.reserve["fusil"] = 240
+	await _wait(0.8)
+	player.look_at_point(player.global_position + Vector3(0, 1.5, -30))
+	player.scripted.fire_held = true
+	await _wait(0.5)
+	player.scripted.fire_held = false
+	var burst := ar.burst_n
+	await _wait(0.6)
+	await _press_hold_fire()
+	if burst < 4 or ar.burst_n != 1:
+		_fail("recul : rafale de %d tirs, puis %d" % [burst, ar.burst_n])
+	# Caméra de la mort : on suit le bot qui vous a éliminé, puis celui qui l'abat ; elle s'arrête
+	# au redéploiement.
+	player.scripted.fire_held = false
+	var killer := bots[0]
+	var avenger := bots[1]
+	for bt in [killer, avenger]:
+		bt.sante.invulnerable = false
+		bt.sante.reset(0)
+	killer.spawn_at(player.global_position + Vector3(6, 0.2, 6), 0.0)
+	await _wait(0.2)
+	player.sante.invulnerable = false
+	player.sante.take(900.0, "torse", "balle", true, killer)
+	await _wait(0.3)
+	if hud.kc_target != killer or not hud._killcam.current or not hud._kc_box.visible:
+		_fail("caméra de la mort : pas sur le tueur (%s)" % [hud.kc_target])
+	killer.sante.take(900.0, "torse", "balle", true, avenger)
+	await _wait(0.3)
+	if hud.kc_target != avenger:
+		_fail("caméra de la mort : ne passe pas au suivant (%s)" % [hud.kc_target])
+	partie.info[player].respawn = 0.05
+	await _wait(0.3)
+	if hud.kc_target != null or not player.cam.current or player.sante.dead:
+		_fail("caméra de la mort : toujours active après le redéploiement")
+	player.scripted = null
 	_end_partie()
 	await _wait(0.1)
 	return "contrats : %d tablettes, reconnaissance en %.1f s" % [tabs, t_rec]
@@ -1846,6 +1886,22 @@ func _tour() -> void:
 	player.look_at_point(tz.haut + outward.rotated(Vector3.UP, 0.9) * 40.0 + Vector3(0, -14.0, 0))
 	await _wait(0.4)
 	await _shot(dir, "47_sommet_phare")
+	# Caméra de la mort : un bot vous élimine, on le suit.
+	var kb := bots[1]
+	kb.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
+	kb.arsenal.cur = 0
+	kb.arsenal.view.set_weapon(kb.arsenal.current(), false)
+	var kp := gp + Vector3(-14, 0, 10)
+	kb.spawn_at(Vector3(kp.x, ile.ground_at(kp.x, kp.z) + 0.1, kp.z), 0.0)
+	player.spawn_at(Vector3(gp.x, ile.ground_at(gp.x, gp.z) + 0.1, gp.z), 0.0)
+	await _wait(0.3)
+	kb.look_at_point(player.global_position + Vector3(0, 1.2, 0))
+	kb.sante.hp = 64.0
+	kb.sante.armor = 30.0
+	player.sante.invulnerable = false
+	player.sante.take(900.0, "torse", "balle", true, kb)
+	await _wait(1.5)
+	await _shot(dir, "48_camera_mort")
 	show_lobby()
 	player.scripted = null
 	get_tree().quit()

@@ -27,5 +27,13 @@ func update_view(_delta: float, _speed: float, _sprinting: bool, _on_floor: bool
 	pass
 
 
+func add_sway(_look_delta: Vector2) -> void:
+	pass
+
+
+func land(_speed: float) -> void:
+	pass
+
+
 func muzzle_global(_left := false) -> Vector3:
 	return global_position - global_basis.z * 0.6 + Vector3(0, -0.15, 0)

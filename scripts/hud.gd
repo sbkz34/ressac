@@ -50,6 +50,14 @@ var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
 var _contrat_lbl: Label
+# Caméra de la mort : on suit celui qui vous a éliminé pendant l'attente du redéploiement.
+var _killcam: Camera3D
+var kc_target: Joueur
+var _kc_box: PanelContainer
+var _kc_name: Label
+var _kc_arme: Label
+var _kc_vie: Label
+var _kc_timer: Label
 var _frappes_vues := 0
 var largage: LargageUI
 var _panel_dim: ColorRect
@@ -158,6 +166,7 @@ func _ready() -> void:
 	_respawn_lbl.offset_right = 500
 	_respawn_lbl.offset_top = -40
 	_respawn_lbl.offset_bottom = 10
+	_build_killcam_box()
 	_help = _label(_frame, 17, Color(1, 1, 1, 0.8))
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_help.offset_top = -30
@@ -244,6 +253,8 @@ func notify(t: String) -> void:
 
 
 func set_partie(p: Partie) -> void:
+	if kc_target:
+		stop_killcam()
 	partie = p
 	_map.partie = p
 	_mini.partie = p
@@ -294,10 +305,106 @@ func _on_killed(killer: String, victim: String, cause: String, by_player: bool, 
 			t = "%s %s" % [victim, {"brume": "succombe à la Brume", "chute": "s'écrase"}.get(cause, "est éliminé")]
 	if by_player:
 		notify("Élimination : %s" % victim)
+	# Caméra de la mort : on suit le tueur ; s'il tombe à son tour, on suit le suivant.
+	if partie and partie.respawn_open and (on_player or (kc_target and victim == kc_target.nom)):
+		var k: Joueur = null
+		for c in partie.combatants:
+			if c.nom == killer and c != player:
+				k = c
+		if k:
+			start_killcam(k, k.global_position.distance_to(player.global_position))
+		elif not on_player:
+			stop_killcam()
 	_feed_lines.append([t, 7.0])
 	while _feed_lines.size() > 5:
 		_feed_lines.pop_front()
 	_refresh_feed()
+
+
+func _build_killcam_box() -> void:
+	_kc_box = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.06, 0.09, 0.84)
+	sb.border_color = Color(0.9, 0.25, 0.2)
+	sb.border_width_left = 5
+	sb.content_margin_left = 22
+	sb.content_margin_right = 22
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 12
+	sb.corner_radius_top_right = 6
+	sb.corner_radius_bottom_right = 6
+	_kc_box.add_theme_stylebox_override("panel", sb)
+	_kc_box.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_kc_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_kc_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_kc_box.offset_bottom = -26
+	_kc_box.custom_minimum_size = Vector2(460, 0)
+	_kc_box.visible = false
+	_frame.add_child(_kc_box)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	_kc_box.add_child(v)
+	UIStyle.label(v, "ÉLIMINÉ PAR", "gras", 16, Color(0.95, 0.4, 0.32))
+	_kc_name = UIStyle.label(v, "", "titre", 34, UIStyle.TEXTE)
+	_kc_arme = UIStyle.label(v, "", "texte", 18, UIStyle.DOUX)
+	_kc_vie = UIStyle.label(v, "", "gras", 18, UIStyle.OR)
+	_kc_timer = UIStyle.label(v, "", "gras", 20, Color(1, 0.9, 0.6))
+
+
+## Caméra de la mort : derrière l'épaule de celui qui vous a éliminé.
+func start_killcam(k: Joueur, dist: float) -> void:
+	if not is_instance_valid(k) or k == player:
+		return
+	if _killcam == null:
+		_killcam = Camera3D.new()
+		_killcam.fov = 68.0
+		_killcam.near = 0.08
+		_killcam.far = 2200.0
+		player.get_parent().add_child(_killcam)
+	kc_target = k
+	_kc_name.text = k.nom
+	var w := k.arsenal.current()
+	_kc_arme.text = ("%s · %d m" % [Armes.info(String(w.id)).nom, int(round(dist))]) if not w.is_empty() else "%d m" % int(round(dist))
+	_killcam.global_position = _kc_spot(k)
+	_killcam.current = true
+	_kc_box.visible = true
+
+
+func stop_killcam() -> void:
+	kc_target = null
+	_kc_box.visible = false
+	if _killcam and _killcam.current and is_instance_valid(player):
+		player.cam.current = true
+
+
+func _kc_spot(k: Joueur) -> Vector3:
+	var fwd := Vector3(-sin(k.rotation.y), 0, -cos(k.rotation.y))
+	var right := Vector3(-fwd.z, 0, fwd.x)
+	var head := k.global_position + Vector3(0, 1.75, 0)
+	var want := head - fwd * 3.2 + right * 0.9 + Vector3(0, 0.45, 0)
+	# Pas à travers un mur : on se rapproche de la tête si besoin.
+	var q := PhysicsRayQueryParameters3D.create(head, want, G.L_WORLD)
+	var hit := k.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit:
+		want = head.lerp(hit.position, 0.85)
+	return want
+
+
+func _update_killcam(delta: float) -> void:
+	if kc_target == null:
+		return
+	var k := kc_target
+	if not is_instance_valid(k) or partie == null or not partie.running or partie.respawn_left < 0.0 \
+			or k.sante.dead or k.etat == Joueur.Etat.AVION or k.etat == Joueur.Etat.DRONE:
+		stop_killcam()
+		return
+	_killcam.global_position = _killcam.global_position.lerp(_kc_spot(k), minf(1.0, 7.0 * delta))
+	var aim := k.cam.global_position - k.cam.global_basis.z * 14.0
+	var look := (k.global_position + Vector3(0, 1.5, 0)).lerp(aim, 0.55)
+	if not look.is_equal_approx(_killcam.global_position):
+		_killcam.look_at(look)
+	_kc_vie.text = "Il lui reste %d PV · %d d'armure" % [int(ceil(k.sante.hp)), int(ceil(k.sante.armor))]
+	_kc_timer.text = "Redéploiement dans %d s" % int(ceil(partie.respawn_left))
 
 
 func _refresh_feed() -> void:
@@ -844,6 +951,9 @@ func _update_help() -> void:
 	if G.input_mode == "touch" or player == null:
 		_help.text = ""
 		return
+	if player.sante.dead:
+		_help.text = ""
+		return
 	if player.is_drone():
 		_help.text = "%s / %s : monter / descendre  ·  %s : rapide  ·  F : quitter le drone" % [key_name("jump"), key_name("crouch"), key_name("sprint")]
 		return
@@ -890,8 +1000,14 @@ func _process(delta: float) -> void:
 		Joueur.Etat.ESCALADE:
 			st = "ESCALADE"
 		Joueur.Etat.DRONE:
-			st = "DRONE"
-			tl = {"saut": "MONTER", "accroupi": "BAS", "sprint": "RAPIDE"}
+			if player.sante.dead:
+				tl = {"saut": "", "accroupi": "", "sprint": ""}
+			else:
+				st = "DRONE"
+				tl = {"saut": "MONTER", "accroupi": "BAS", "sprint": "RAPIDE"}
+		Joueur.Etat.TYROLIENNE:
+			st = "TYROLIENNE — %s : lâcher" % key_name("jump")
+			tl = {"saut": "LÂCHER", "accroupi": "", "sprint": ""}
 		_:
 			if player.swimming:
 				st = "NAGE"
@@ -915,7 +1031,10 @@ func _process(delta: float) -> void:
 			" · masque %d s" % int(a.gas_mask) if a.gas_mask > 0.0 else ""]
 	_brume_lbl.modulate = Color(1, 0.45, 0.35) if player.in_gas else Color(1, 1, 1)
 	_gas.color.a = (0.22 + 0.06 * sin(Time.get_ticks_msec() / 250.0)) if player.in_gas else 0.0
-	if partie and partie.respawn_left >= 0.0:
+	_update_killcam(delta)
+	if kc_target:
+		_respawn_lbl.text = ""
+	elif partie and partie.respawn_left >= 0.0:
 		_respawn_lbl.text = "Redéploiement dans %d s" % int(ceil(partie.respawn_left))
 	elif partie and not partie.running and player.sante.dead:
 		_respawn_lbl.text = "Éliminé"

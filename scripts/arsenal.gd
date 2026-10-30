@@ -41,6 +41,8 @@ var reloading := false
 var reload_t := 0.0
 var plate_t := 0.0
 var target_item: Node3D        # butin (arme) ou coffre à portée de main
+var burst_n := 0               # rang du tir dans la rafale (motif de recul)
+var _since_shot := 9.0
 var assist_target: Node3D
 var shots_fired := 0
 var pillage: Pillage
@@ -367,9 +369,15 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 		G.report_shot(joueur)
 	view.shot(float(a.recul))
 	_bloom = minf(_bloom + 0.35 * float(a.recul), 4.0)
-	# Recul : la visée monte, avec un peu de dérive latérale.
+	# Recul : la visée monte et dérive selon le motif propre à l'arme (le même à chaque rafale,
+	# donc on apprend à le compenser), plus un peu de hasard.
 	var k := float(a.recul) * lerpf(0.45, 0.22, ads) * (0.75 if has_perk("tete_froide") else 1.0)
-	joueur.add_recoil(k, randf_range(-0.35, 0.35) * k)
+	if _since_shot > float(a.rof) * 2.5 + 0.08:
+		burst_n = 0
+	var rec := Armes.recul_motif(String(w.id), burst_n)
+	joueur.add_recoil(k * rec.y, (rec.x + randf_range(-0.12, 0.12)) * k)
+	burst_n += 1
+	_since_shot = 0.0
 	if int(w.chargeur) <= 0 and int(reserve[a.munition]) > 0:
 		start_reload()
 	changed.emit()
@@ -631,7 +639,10 @@ func look_scale() -> float:
 
 
 func _process(delta: float) -> void:
+	_since_shot += delta
 	if view and joueur:
+		view.strafe = joueur.velocity.dot(joueur.global_basis.x)
+		view.vertical = joueur.velocity.y
 		view.update_view(delta, joueur.hspeed, joueur.sprinting, joueur.is_on_floor())
 		var w := current()
 		view.hidden_by_scope = not w.is_empty() and (w.id == "aiguille" or w.get("acc", []).has("lunette")) and ads > 0.9

@@ -110,6 +110,9 @@ var _mantle_posture: int = Posture.DEBOUT
 var _mantle_sprint := false
 var _step := 0.0
 var _fall_peak := 0.0
+var _sway_t := 0.0
+var _sway_amp := 0.0
+var _steady := 0.0
 var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
 var _hb_on := true
 var _y_t := -1.0               # Y maintenu depuis (négatif : relâché)
@@ -389,6 +392,8 @@ func _look(d: Vector2) -> void:
 func _physics_process(delta: float) -> void:
 	var i := scripted if scripted else _local
 	_look(i.look)
+	if not is_bot:
+		arsenal.view.add_sway(i.look)
 	tac_cooldown = maxf(0.0, tac_cooldown - delta)
 	since_slide += delta
 	match etat:
@@ -541,6 +546,8 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 	if on_floor and is_on_wall() and hv.length() > 0.5 and not swimming:
 		_step_up(Vector3(hv.x, 0, hv.y))
 	if is_on_floor() and not on_floor:
+		if _fall_peak > 2.0:
+			arsenal.view.land(_fall_peak)
 		if _fall_peak > 9.0:
 			_snd("jump_land", -6.0)
 			landed.emit()
@@ -954,6 +961,19 @@ func _update_camera(delta: float) -> void:
 	cam.fov = lerpf(cam.fov, fov, minf(1.0, (20.0 if arsenal.ads > 0.0 else 8.0) * delta))
 	_roll = lerpf(_roll, roll, minf(1.0, 10.0 * delta))
 	head.rotation = Vector3(_pitch, 0, deg_to_rad(_roll))
+	# Balancement en visée (la vraie visée bouge : les balles suivent la caméra). Il se calme si
+	# l'on reste immobile un instant (on retient son souffle), et accroupi ou couché.
+	_sway_t += delta
+	_steady = _steady + delta if hspeed < 0.6 and is_on_floor() else 0.0
+	var amp := Armes.balancement(w) * arsenal.ads if not is_bot else 0.0
+	amp *= lerpf(1.0, 0.15, clampf((_steady - 0.3) / 0.9, 0.0, 1.0))
+	if posture == Posture.ACCROUPI:
+		amp *= 0.7
+	elif posture == Posture.COUCHE:
+		amp *= 0.4
+	_sway_amp = lerpf(_sway_amp, amp, minf(1.0, 4.0 * delta))
+	cam.rotation = Vector3(sin(_sway_t * 1.3) * 0.6 + sin(_sway_t * 0.55) * 0.4,
+		sin(_sway_t * 0.9) * 0.7 + sin(_sway_t * 0.37 + 1.0) * 0.3, 0) * deg_to_rad(_sway_amp)
 
 
 # ------------------------------------------------------------------------------------------------
