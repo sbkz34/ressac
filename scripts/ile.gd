@@ -419,9 +419,15 @@ func _batiment(node: Node3D, b: Dictionary) -> void:
 	# Volets de couleur à côté des fenêtres des petites maisons (décor).
 	if w <= 12.0 and d <= 12.0:
 		var vm: Material = mats.volet_vert if int(absf(b.x + b.z)) % 2 == 0 else mats.volet_bleu
+		# De part et d'autre de chaque fenêtre de la façade sud (pas devant : on peut la franchir).
+		var count := int((w - 1.6) / 3.4)
 		for k in floors:
-			for sx in [-1.0, 1.0]:
-				box(node, Vector3(sx * (w / 4), k * fh + 1.6, z1 + T / 2 + 0.04), Vector3(0.5, 1.3, 0.06), vm, false)
+			for i in count:
+				var c := (i + 0.5) * (w / count)
+				if c < 1.0 or c > w - 1.0 or (k == 0 and portes.has("s") and absf(c - w / 2) < DOOR_W / 2 + 1.2):
+					continue
+				for sx in [-1.0, 1.0]:
+					box(node, Vector3(x0 + c + sx * 0.93, k * fh + 1.6, z1 + T / 2 + 0.04), Vector3(0.5, 1.3, 0.06), vm, false)
 
 
 func _toit_tuiles(node: Node3D, w: float, d: float, y: float) -> void:

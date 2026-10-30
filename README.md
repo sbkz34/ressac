@@ -65,6 +65,18 @@ secondes d'alerte au sol.
 |---|---|
 | ![Tablette de contrat](docs/captures/43_tablette.jpg) | ![Carte : contrat, ennemis révélés, frappe](docs/captures/44_carte_contrat.jpg) |
 
+### Fenêtres
+
+Face à une fenêtre (à moins d'1,5 m environ), l'interface affiche « FENÊTRE — SAUT : franchir » (le
+bouton tactile devient FRANCHIR) : un saut fait passer par l'ouverture, tête baissée, en une demi-
+seconde (un peu plus vite en sprintant), et on se relève de l'autre côté. Ça marche dans les deux
+sens, au rez-de-chaussée comme aux étages (on retombe alors dehors). Les volets décoratifs sont
+désormais de part et d'autre des fenêtres, plus devant.
+
+| | |
+|---|---|
+| ![Fenêtre](docs/captures/50_fenetre.jpg) | ![Franchissement](docs/captures/50b_franchissement.jpg) |
+
 ### Tyroliennes
 
 Trois **tyroliennes** montent au sommet des points hauts : la galerie du **Phare** (46 m), une

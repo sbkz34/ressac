@@ -54,6 +54,8 @@ var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
 var _contrat_lbl: Label
+var _window_t := 0.0
+var _window_ok := false
 # Caméra de la mort : on suit celui qui vous a éliminé pendant l'attente du redéploiement.
 var _killcam: Camera3D
 var kc_target: Joueur
@@ -1078,7 +1080,7 @@ func _process(delta: float) -> void:
 			st = "GLISSADE"
 			tl = {"accroupi": "ANNULER"}
 		Joueur.Etat.ESCALADE:
-			st = "ESCALADE"
+			st = "FRANCHISSEMENT" if player._vault else "ESCALADE"
 		Joueur.Etat.DRONE:
 			if player.sante.dead:
 				tl = {"saut": "", "accroupi": "", "sprint": ""}
@@ -1101,6 +1103,14 @@ func _process(delta: float) -> void:
 				st = "ACCROUPI"
 			elif player.posture == Joueur.Posture.COUCHE:
 				st = "COUCHÉ"
+			# Fenêtre devant soi : saut pour la franchir (vérifié quelques fois par seconde).
+			_window_t -= delta
+			if _window_t <= 0.0:
+				_window_t = 0.15
+				_window_ok = player.posture != Joueur.Posture.COUCHE and not player.swimming and not player.find_window().is_empty()
+			if _window_ok:
+				st = "FENÊTRE — %s : franchir" % key_name("jump")
+				tl["saut"] = "FRANCHIR"
 	_state.text = st
 	var a := player.arsenal
 	# Brume, réapparition, voile toxique.

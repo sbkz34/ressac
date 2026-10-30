@@ -853,6 +853,7 @@ func _check() -> void:
 	# Jalon 4 : bots
 	# ---------------------------------------------------------------------------------------
 	await _check_manette()
+	await _check_fenetre()
 	var bot_stats := await _check_bots()
 
 	# Manette : Y maintenu pose une plaque, Y bref change d'arme (par les vraies commandes).
@@ -1128,6 +1129,60 @@ func _check_manette() -> void:
 	if arv.view.shown != WeaponView.key_of(arv.current()):
 		_fail("arme affichée pas resynchronisée (%s)" % arv.view.shown)
 	print("[check] manette : %.0f puis %.0f °/s au bord, écart en strafant %.1f° sans assistance, %.1f° avec" % [rad_to_deg(early), rad_to_deg(late), err[0], err[1]])
+
+
+## Fenêtres : face à une fenêtre du rez-de-chaussée (maison du Phare), saut = on la franchit, on se
+## retrouve dedans ; puis on ressort par la même. Face à un mur plein, rien.
+func _check_fenetre() -> void:
+	var lz: Dictionary = {}
+	for l in G.data.lieux:
+		if l.id == "phare":
+			lz = l
+	var bat: Dictionary = {}
+	for bb in lz.batiments:
+		if bb.t == "bat":
+			bat = bb
+	var w := float(bat.w)
+	var d := float(bat.d)
+	var count := int((w - 1.6) / 3.4)
+	var wx := float(lz.x) + float(bat.x) - w / 2 + 0.5 * (w / count)     # première fenêtre, façade sud
+	var wz := float(lz.z) + float(bat.z) + d / 2
+	_set_mode("entrainement")
+	player.scripted = Intentions.new()
+	player.sante.invulnerable = true
+	var outside := Vector3(wx, 0, wz + 0.9)
+	player.spawn_at(Vector3(outside.x, ile.ground_at(outside.x, outside.z) + 0.05, outside.z), 0.0)
+	await _wait(0.4)
+	if player.find_window().is_empty():
+		_fail("fenêtre : pas détectée devant la maison du Phare (%s)" % player.global_position)
+		return
+	player.scripted.jump = true
+	await _wait(0.1)
+	if player.etat != Joueur.Etat.ESCALADE or not player._vault:
+		_fail("fenêtre : saut sans franchissement (%d)" % player.etat)
+	await _until(func(): return player.etat == Joueur.Etat.SOL and player.is_on_floor(), 3.0)
+	await _wait(0.3)
+	var inside_z := player.global_position.z
+	if inside_z > wz - 0.5 or player.posture != Joueur.Posture.DEBOUT:
+		_fail("fenêtre : pas entré (z %.2f, mur à %.2f)" % [inside_z, wz])
+	# Ressortir.
+	player.look_at_point(Vector3(wx, player.global_position.y + 1.4, wz + 5.0))
+	player.scripted.move = Vector2(0, -1)
+	await _until(func(): return not player.find_window().is_empty(), 2.0)
+	player.scripted.move = Vector2.ZERO
+	player.scripted.jump = true
+	await _until(func(): return player.etat == Joueur.Etat.SOL and player.is_on_floor() and player.global_position.z > wz + 0.3, 3.0)
+	if player.global_position.z < wz + 0.3:
+		_fail("fenêtre : pas ressorti (z %.2f)" % player.global_position.z)
+	# Mur plein (entre deux fenêtres) : pas de fenêtre.
+	var solid := Vector3(float(lz.x) + float(bat.x) - w / 2 + 0.06 * w, 0, wz + 0.9)
+	player.spawn_at(Vector3(solid.x, ile.ground_at(solid.x, solid.z) + 0.05, solid.z), 0.0)
+	await _wait(0.3)
+	if not player.find_window().is_empty():
+		_fail("fenêtre détectée dans un mur plein")
+	player.sante.invulnerable = false
+	player.scripted = null
+	print("[check] fenêtre : franchie dans les deux sens (%d)" % player.vaults)
 
 
 ## Progression : niveaux, expérience d'une partie, défis, camouflages (sur l'arme en main),
@@ -2046,6 +2101,21 @@ func _tour() -> void:
 	player.look_at_point(tz.haut + outward.rotated(Vector3.UP, 0.9) * 40.0 + Vector3(0, -14.0, 0))
 	await _wait(0.4)
 	await _shot(dir, "47_sommet_phare")
+	# Fenêtre de la maison du Phare : l'invite, puis le passage.
+	var lzf: Dictionary = G.data.lieux.filter(func(l): return l.id == "phare")[0]
+	var batf: Dictionary = lzf.batiments.filter(func(bb): return bb.t == "bat")[0]
+	var wxf := float(lzf.x) + float(batf.x) - float(batf.w) / 2 + 0.5 * (float(batf.w) / int((float(batf.w) - 1.6) / 3.4))
+	var wzf := float(lzf.z) + float(batf.z) + float(batf.d) / 2
+	player.spawn_at(Vector3(wxf + 0.4, ile.ground_at(wxf, wzf + 1.5) + 0.05, wzf + 1.5), 0.0)
+	player.look_at_point(Vector3(wxf, player.global_position.y + 1.0, wzf))
+	await _wait(0.5)
+	await _shot(dir, "50_fenetre")
+	player.spawn_at(Vector3(wxf, ile.ground_at(wxf, wzf + 0.9) + 0.05, wzf + 0.9), 0.0)
+	await _wait(0.3)
+	player.scripted.jump = true
+	await _wait(0.3)
+	await _shot(dir, "50b_franchissement", 1)
+	await _wait(0.6)
 	# Caméra de la mort : un bot vous élimine, on le suit.
 	var kb := bots[1]
 	kb.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]

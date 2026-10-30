@@ -70,6 +70,7 @@ var _zip_pts := PackedVector3Array()   # tyrolienne : trajet (pieds) et distance
 var _zip_s := 0.0
 var _zip_up := true
 var tyroliennes := 0                   # nombre de trajets (statistiques)
+var vaults := 0                        # fenêtres franchies
 var posture: int = Posture.DEBOUT
 var sprinting := false
 var swimming := false
@@ -109,6 +110,8 @@ var _mantle_from := Vector3.ZERO
 var _mantle_to := Vector3.ZERO
 var _mantle_t := 0.0
 var _mantle_dur := 0.0
+var _vault := false          # l'escalade en cours est le franchissement d'une fenêtre
+var _vault_mid := Vector3.ZERO
 var _mantle_posture: int = Posture.DEBOUT
 var _mantle_sprint := false
 var _step := 0.0
@@ -552,15 +555,16 @@ func _sim_sol(i: Intentions, delta: float) -> void:
 		if on_floor or _air_t < 0.12:
 			if posture != Posture.DEBOUT:
 				_set_posture(Posture.DEBOUT)
-			elif not _try_mantle():
+			elif not _try_vault() and not _try_mantle():
 				velocity.y = JUMP
 				_air_t = 1.0
-		elif not _try_mantle():
+		elif not _try_vault() and not _try_mantle():
 			if velocity.y < 0.0 and height_above_ground() >= REDEPLOY_HEIGHT:
 				_open_chute()
 				return
 	elif i.jump_held and not on_floor and not swimming and velocity.y < 2.0 and i.move.y < -0.3:
-		_try_mantle()   # en l'air, maintenir saut en avançant agrippe le rebord
+		if not _try_vault():
+			_try_mantle()   # en l'air, maintenir saut en avançant agrippe le rebord
 	if etat != Etat.SOL:
 		return
 
@@ -783,6 +787,67 @@ func find_ledge() -> Dictionary:
 	return {}
 
 
+## Fenêtre devant soi (ouverture dans un mur, appui entre 0,6 et 1,5 m, au moins 0,8 m de haut) :
+## {"sill": hauteur de l'appui, "mid": devant l'ouverture, "to": de l'autre côté}, ou {}.
+func find_window() -> Dictionary:
+	var space := get_world_3d().direct_space_state
+	var f2 := _forward2()
+	var fwd := Vector3(f2.x, 0, f2.y)
+	var feet := global_position
+	var ex := [get_rid()]
+	# Le mur sous la fenêtre, à portée.
+	var low := space.intersect_ray(PhysicsRayQueryParameters3D.create(feet + Vector3(0, 0.45, 0), feet + Vector3(0, 0.45, 0) + fwd * 1.6, G.L_WORLD, ex))
+	if low.is_empty() or absf(low.normal.y) > 0.3 or (low.normal as Vector3).dot(-fwd) < 0.6:
+		return {}
+	var d := Vector2(low.position.x - feet.x, low.position.z - feet.z).length()
+	# L'appui : on descend dans l'épaisseur du mur depuis 1,9 m.
+	var probe := Vector3(low.position.x, feet.y, low.position.z) + fwd * 0.12
+	var sill := space.intersect_ray(PhysicsRayQueryParameters3D.create(probe + Vector3(0, 1.9, 0), probe + Vector3(0, 0.3, 0), G.L_WORLD, ex))
+	if sill.is_empty() or sill.normal.y < 0.7:
+		return {}
+	var s: float = sill.position.y
+	if s - feet.y < 0.6 or s - feet.y > 1.5:
+		return {}
+	# Une ouverture, pas un muret : un linteau entre 0,8 et 1,6 m au-dessus de l'appui.
+	var lintel := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(probe.x, s + 0.05, probe.z), Vector3(probe.x, s + 1.6, probe.z), G.L_WORLD, ex))
+	if lintel.is_empty() or lintel.position.y - s < 0.8:
+		return {}
+	# On voit à travers (au milieu de l'ouverture) et il y a de la place de l'autre côté.
+	var through_y := s + minf(0.5, (lintel.position.y - s) * 0.5)
+	var eye := Vector3(feet.x, through_y, feet.z)
+	if not space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, eye + fwd * (d + 1.4), G.L_WORLD, ex)).is_empty():
+		return {}
+	var to := Vector3(feet.x, s + 0.05, feet.z) + fwd * (d + 0.3 + 0.75)
+	if not _fits(to, HEIGHTS[Posture.ACCROUPI]):
+		return {}
+	var mid := Vector3(feet.x, s + 0.05, feet.z) + fwd * maxf(d - 0.42, 0.0)
+	return {"sill": s, "mid": mid, "to": to}
+
+
+## Franchir une fenêtre (saut face à une ouverture) : on se baisse, on passe, on retombe de l'autre
+## côté.
+func _try_vault() -> bool:
+	if posture == Posture.COUCHE or swimming:
+		return false
+	var wnd := find_window()
+	if wnd.is_empty():
+		return false
+	_mantle_from = global_position
+	_vault_mid = wnd.mid
+	_mantle_to = wnd.to
+	_mantle_posture = Posture.DEBOUT if _fits(_mantle_to, HEIGHTS[Posture.DEBOUT]) else Posture.ACCROUPI
+	_mantle_sprint = sprinting
+	_mantle_t = 0.0
+	_mantle_dur = 0.42 if sprinting else 0.52
+	_vault = true
+	velocity = Vector3.ZERO
+	_set_posture(Posture.ACCROUPI, true)
+	_set_etat(Etat.ESCALADE)
+	_snd("pas_dur_%d" % randi_range(1, 4), -10.0, 0.75)
+	vaults += 1
+	return true
+
+
 func _try_mantle() -> bool:
 	if posture == Posture.COUCHE:
 		return false
@@ -794,6 +859,7 @@ func _try_mantle() -> bool:
 	_mantle_posture = l.posture
 	_mantle_sprint = sprinting
 	_mantle_t = 0.0
+	_vault = false
 	_mantle_dur = 0.22 + 0.12 * (_mantle_to.y - _mantle_from.y)
 	velocity = Vector3.ZERO
 	_set_etat(Etat.ESCALADE)
@@ -804,13 +870,24 @@ func _try_mantle() -> bool:
 func _sim_escalade(delta: float) -> void:
 	_mantle_t += delta
 	var k := clampf(_mantle_t / _mantle_dur, 0.0, 1.0)
-	# On monte d'abord (70 %), puis on passe par-dessus.
-	var up := ease(clampf(k / 0.7, 0.0, 1.0), 0.6)
-	var over := ease(clampf((k - 0.55) / 0.45, 0.0, 1.0), 1.6)
-	var p := _mantle_from.lerp(_mantle_to, over)
-	p.y = lerpf(_mantle_from.y, _mantle_to.y, up)
+	var p: Vector3
+	if _vault:
+		# Fenêtre : on monte jusqu'à l'appui en s'approchant, puis on passe à l'horizontale.
+		if k < 0.4:
+			var a := k / 0.4
+			p = _mantle_from.lerp(_vault_mid, ease(a, 0.8))
+			p.y = lerpf(_mantle_from.y, _vault_mid.y, ease(a, 0.5))
+		else:
+			p = _vault_mid.lerp(_mantle_to, ease((k - 0.4) / 0.6, 0.9))
+	else:
+		# On monte d'abord (70 %), puis on passe par-dessus.
+		var up := ease(clampf(k / 0.7, 0.0, 1.0), 0.6)
+		var over := ease(clampf((k - 0.55) / 0.45, 0.0, 1.0), 1.6)
+		p = _mantle_from.lerp(_mantle_to, over)
+		p.y = lerpf(_mantle_from.y, _mantle_to.y, up)
 	global_position = p
 	if k >= 1.0:
+		_vault = false
 		_set_etat(Etat.SOL)
 		_set_posture(_mantle_posture, true)
 		sprinting = _mantle_sprint and _mantle_posture == Posture.DEBOUT
@@ -1017,6 +1094,8 @@ func _update_camera(delta: float) -> void:
 			fov += 6.0
 	if swimming:
 		eye = 1.45
+	if etat == Etat.ESCALADE and _vault:
+		eye = 0.75     # tête baissée pour passer sous le linteau
 	if etat == Etat.SOL and sprinting:
 		fov += 10.0 if tac_left > 0.0 else 4.0
 	var w := arsenal.current()
