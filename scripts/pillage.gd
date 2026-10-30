@@ -158,6 +158,18 @@ func spawn_largage(at: Vector3) -> Coffre:
 	return c
 
 
+## Ravitaillement aérien : grosse caisse qui descend du ciel, avec fumée rouge.
+func spawn_aerien(at: Vector3) -> Coffre:
+	var c := Coffre.new()
+	c.aerien = true
+	add_child(c)
+	c.global_position = at
+	c.drop_from(90.0)
+	c.opened.connect(_on_chest_opened)
+	chests.append(c)
+	return c
+
+
 ## Un largage ouvert (classe choisie) disparaît peu après : on ne le confond plus avec un neuf.
 func _retirer_largage(c: Coffre) -> void:
 	var tw := c.create_tween()
@@ -228,6 +240,15 @@ func _on_chest_opened(c: Coffre) -> void:
 	var front := -c.global_basis.z
 	var right := c.global_basis.x
 	var base := c.global_position + front * 0.9
+	if c.aerien:
+		# Arme légendaire (avec ses munitions), 1 500 €, 3 plaques, munitions.
+		spawn_weapon(Armes.nouvelle(ARMES_COURANTES[_pick_weighted(POIDS_ARMES)], 3, null), base + front * 0.4)
+		spawn(Butin.make_argent(1500), base - right * 1.0, rng.randf() * TAU)
+		spawn(Butin.make_plaque(3), base + right * 1.0, rng.randf() * TAU)
+		for k in 2:
+			var kd := random_ammo_kind()
+			spawn(Butin.make_munitions(kd, int(Armes.MUNITIONS[kd].lot) * 2), base + right * (0.5 - k) * 1.2 + front * 1.0, rng.randf() * TAU)
+		return
 	spawn_weapon(random_weapon(4), base)
 	spawn(Butin.make_plaque(rng.randi_range(1, 2)), base + right * 0.7, rng.randf() * TAU)
 	spawn(Butin.make_argent(rng.randi_range(8, 16) * 50), base - right * 0.7, rng.randf() * TAU)

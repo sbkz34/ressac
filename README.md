@@ -92,6 +92,24 @@ chercher le coffre ou guetter un moment, puis redescendent.
 |---|---|
 | ![Tyrolienne du Phare](docs/captures/45_tyrolienne.jpg) | ![Au sommet du Phare](docs/captures/47_sommet_phare.jpg) |
 
+### Rythme de partie
+
+- **Chaque élimination enlève 5 s** à son prochain redéploiement (jusqu'à 15 s), comme dans
+  Résurgence : on gagne à jouer agressif.
+- **Une élimination rapporte au moins 200 €** (le sac d'un adversaire fauché en contient quand même).
+- **Ravitaillement aérien** au début de la phase 3 : une grosse caisse rouge tombe dans le
+  prochain cercle, annoncée et marquée sur les cartes ; dedans, une arme légendaire, 1 500 €,
+  3 plaques et des munitions. Les bots s'y précipitent aussi.
+- **Annonces** en grand avec un son : la Brume avance, plus de réapparition, dernier cercle,
+  10 / 5 / 3 survivants, ravitaillement. **Musique** au dernier cercle (ou à 5 survivants).
+- **Sons à l'écran** (réglable) : des arcs autour du réticule montrent d'où viennent les pas
+  (blanc) et les tirs (orange) proches — utile en jouant sans le son.
+- La caméra de la mort résume le **duel** : dégâts et touches donnés et reçus.
+
+| | |
+|---|---|
+| ![Annonce et sons à l'écran](docs/captures/51_annonce.jpg) | |
+
 ### Caméra de la mort et ressenti des armes
 
 Éliminé, on **suit celui qui vous a eu**, par-dessus son épaule, pendant l'attente du

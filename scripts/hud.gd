@@ -54,6 +54,13 @@ var _station: Node3D
 var _crate: Coffre
 var _alive_lbl: Label
 var _contrat_lbl: Label
+var _annonce: VBoxContainer
+var _annonce_titre: Label
+var _annonce_sous: Label
+var _annonce_tw: Tween
+var _musique: AudioStreamPlayer
+var _musique_on := false
+var _kc_duel: Label
 var _window_t := 0.0
 var _window_ok := false
 # Caméra de la mort : on suit celui qui vous a éliminé pendant l'attente du redéploiement.
@@ -177,6 +184,32 @@ func _ready() -> void:
 	_respawn_lbl.offset_top = -40
 	_respawn_lbl.offset_bottom = 10
 	_build_killcam_box()
+	_annonce = VBoxContainer.new()
+	_annonce.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_annonce.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_annonce.offset_top = 150
+	_annonce.alignment = BoxContainer.ALIGNMENT_CENTER
+	_annonce.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_annonce.modulate.a = 0.0
+	_frame.add_child(_annonce)
+	_annonce_titre = UIStyle.label(_annonce, "", "titre", 48, UIStyle.OR)
+	_annonce_titre.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_annonce_titre.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_annonce_titre.add_theme_constant_override("outline_size", 10)
+	_annonce_sous = UIStyle.label(_annonce, "", "gras", 22, UIStyle.TEXTE)
+	_annonce_sous.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_annonce_sous.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_annonce_sous.add_theme_constant_override("outline_size", 8)
+	_musique = AudioStreamPlayer.new()
+	_musique.bus = "Ambiance"
+	var ms: AudioStream = G.sound("musique_fin")
+	if ms is AudioStreamWAV:
+		ms = (ms as AudioStreamWAV).duplicate()
+		ms.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		ms.loop_end = int(ms.get_length() * ms.mix_rate)
+	_musique.stream = ms
+	_musique.volume_db = -80.0
+	add_child(_musique)
 	_help = _label(_frame, 17, Color(1, 1, 1, 0.8))
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_help.offset_top = -30
@@ -267,6 +300,9 @@ func set_partie(p: Partie) -> void:
 	if kc_target:
 		stop_killcam()
 	partie = p
+	_musique_on = false
+	if p:
+		p.announce.connect(annonce)
 	_map.partie = p
 	_mini.partie = p
 	_feed_lines.clear()
@@ -332,6 +368,41 @@ func _on_killed(killer: String, victim: String, cause: String, by_player: bool, 
 	_refresh_feed()
 
 
+## Grande annonce en haut de l'écran (Brume, survivants, ravitaillement), avec un son.
+func annonce(titre: String, sous: String) -> void:
+	_annonce_titre.text = titre
+	_annonce_sous.text = sous
+	_annonce_sous.visible = sous != ""
+	if _annonce_tw:
+		_annonce_tw.kill()
+	_annonce.modulate.a = 0.0
+	_annonce.scale = Vector2(1.08, 1.08)
+	_annonce.pivot_offset = _annonce.size / 2
+	_annonce_tw = create_tween()
+	_annonce_tw.set_parallel(true)
+	_annonce_tw.tween_property(_annonce, "modulate:a", 1.0, 0.25)
+	_annonce_tw.tween_property(_annonce, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_annonce_tw.chain().tween_interval(2.4)
+	_annonce_tw.chain().tween_property(_annonce, "modulate:a", 0.0, 0.6)
+	G.play("annonce", -6.0)
+
+
+## Musique de fin de partie : dernier cercle, ou 5 survivants au plus sans réapparition.
+func _update_musique(delta: float) -> void:
+	var want := partie != null and partie.running and (partie.brume.phase >= Brume.PHASES.size() \
+			or (not partie.respawn_open and partie.remaining() <= 5))
+	if want and not _musique_on:
+		_musique_on = true
+		_musique.volume_db = -40.0
+		_musique.play()
+	elif not want and _musique_on and partie == null:
+		_musique_on = false
+	var target := -7.0 if _musique_on else -60.0
+	_musique.volume_db = move_toward(_musique.volume_db, target, 12.0 * delta)
+	if not _musique_on and _musique.playing and _musique.volume_db <= -59.0:
+		_musique.stop()
+
+
 func _build_killcam_box() -> void:
 	_kc_box = PanelContainer.new()
 	var sb := StyleBoxFlat.new()
@@ -359,6 +430,7 @@ func _build_killcam_box() -> void:
 	_kc_name = UIStyle.label(v, "", "titre", 34, UIStyle.TEXTE)
 	_kc_arme = UIStyle.label(v, "", "texte", 18, UIStyle.DOUX)
 	_kc_vie = UIStyle.label(v, "", "gras", 18, UIStyle.OR)
+	_kc_duel = UIStyle.label(v, "", "texte", 17, UIStyle.TEXTE)
 	_kc_timer = UIStyle.label(v, "", "gras", 20, Color(1, 0.9, 0.6))
 
 
@@ -415,6 +487,9 @@ func _update_killcam(delta: float) -> void:
 	if not look.is_equal_approx(_killcam.global_position):
 		_killcam.look_at(look)
 	_kc_vie.text = "Il lui reste %d PV · %d d'armure" % [int(ceil(k.sante.hp)), int(ceil(k.sante.armor))]
+	var du := partie.duel_avec(k)
+	_kc_duel.text = "Vous : %d dégâts (%d touche%s)   ·   Lui : %d dégâts (%d touche%s)" % [du[0], du[1], "s" if du[1] > 1 else "",
+		du[2], du[3], "s" if du[3] > 1 else ""]
 	_kc_timer.text = "Redéploiement dans %d s" % int(ceil(partie.respawn_left))
 
 
@@ -1122,6 +1197,7 @@ func _process(delta: float) -> void:
 	_brume_lbl.modulate = Color(1, 0.45, 0.35) if player.in_gas else Color(1, 1, 1)
 	_gas.color.a = (0.22 + 0.06 * sin(Time.get_ticks_msec() / 250.0)) if player.in_gas else 0.0
 	_update_killcam(delta)
+	_update_musique(delta)
 	if kc_target:
 		_respawn_lbl.text = ""
 	elif partie and partie.respawn_left >= 0.0:
@@ -1254,6 +1330,9 @@ class MapView:
 				if ch.largage:
 					draw_circle(cp, side / 80.0, Color(0.4, 1.0, 0.5))
 					draw_arc(cp, side / 50.0, 0, TAU, 24, Color(0.4, 1.0, 0.5), 2.0)
+				elif ch.aerien:
+					draw_circle(cp, side / 70.0, Color(1.0, 0.35, 0.2))
+					draw_arc(cp, side / 40.0, 0, TAU, 24, Color(1.0, 0.35, 0.2), 3.0)
 				elif fouineur and ch.global_position.distance_to(player.global_position) < 90.0:
 					draw_rect(Rect2(cp - Vector2.ONE * side / 140.0, Vector2.ONE * side / 70.0), Color(1, 0.8, 0.3))
 		# Tirs ennemis récents (sans silencieux).
@@ -1365,6 +1444,8 @@ class MiniMap:
 			for ch in pillage.chests:
 				if is_instance_valid(ch) and ch.largage and ch.can_open():
 					draw_circle(to_s.call(ch.global_position.x, ch.global_position.z), 4.0, Color(0.4, 1.0, 0.5))
+				elif is_instance_valid(ch) and ch.aerien and ch.can_open():
+					draw_circle(to_s.call(ch.global_position.x, ch.global_position.z), 6.0, Color(1.0, 0.35, 0.2))
 		if is_instance_valid(avion):
 			draw_circle(to_s.call(avion.global_position.x, avion.global_position.z), 4.0, Color(1, 0.8, 0.2))
 		if partie and partie.running:
@@ -1444,6 +1525,8 @@ class Crosshair:
 	var _hit_t := 0.0
 	var _hit_kind := ""
 	var _dmg: Array = []          # [position de l'attaquant, temps restant]
+	var _sons: Array = []         # [position, "pas" ou "tir", intensité 0..1]
+	var _sons_t := 0.0
 
 	## Touché : un arc rouge autour du centre indique d'où vient le tir.
 	func add_damage(from: Vector3) -> void:
@@ -1460,7 +1543,33 @@ class Crosshair:
 		_hit_kind = kind
 		_hit_t = 0.22 if kind != "elimination" else 0.45
 
+	## Sons proches à montrer : pas des autres (debout, en mouvement) et tirs non silencieux.
+	func _collect_sons() -> void:
+		_sons.clear()
+		if arsenal == null or not bool(G.settings.get("sons_visuels", true)):
+			return
+		var j := arsenal.joueur
+		var p := j.global_position
+		for c in get_tree().get_nodes_in_group("combattant"):
+			var o := c as Joueur
+			if o == null or o == j or o.sante.dead or o.etat != Joueur.Etat.SOL or o.hspeed < 2.6 or o.posture != Joueur.Posture.DEBOUT:
+				continue
+			var d := o.global_position.distance_to(p)
+			var reach := 30.0 if o.sprinting else 20.0
+			if d < reach:
+				_sons.append([o.global_position, "pas", 1.0 - d / reach])
+		for sh in G.recent_shots():
+			if sh[2] == j or float(sh[1]) > 0.8:
+				continue
+			var d2 := (sh[0] as Vector3).distance_to(p)
+			if d2 < 90.0:
+				_sons.append([sh[0], "tir", (1.0 - d2 / 90.0) * (1.0 - float(sh[1]) / 0.8)])
+
 	func _process(delta: float) -> void:
+		_sons_t -= delta
+		if _sons_t <= 0.0:
+			_sons_t = 0.1
+			_collect_sons()
 		_hit_t = maxf(0.0, _hit_t - delta)
 		for d in _dmg:
 			d[1] = float(d[1]) - delta
@@ -1472,6 +1581,15 @@ class Crosshair:
 			return
 		var c := size / 2
 		var j := arsenal.joueur
+		for so in _sons:
+			var lo := j.global_basis.inverse() * ((so[0] as Vector3) - j.global_position)
+			var an := atan2(lo.x, -lo.z) - PI / 2.0
+			var rr := minf(size.x, size.y) * 0.14
+			var k: float = clampf(float(so[2]), 0.0, 1.0)
+			if so[1] == "tir":
+				draw_arc(c, rr + 6.0, an - 0.22, an + 0.22, 12, Color(1.0, 0.6, 0.2, 0.35 + 0.6 * k), 6.0)
+			else:
+				draw_arc(c, rr, an - 0.16, an + 0.16, 10, Color(1, 1, 1, 0.2 + 0.55 * k), 3.5)
 		for d in _dmg:
 			var local := j.global_basis.inverse() * ((d[0] as Vector3) - j.global_position)
 			var ang := atan2(local.x, -local.z) - PI / 2.0

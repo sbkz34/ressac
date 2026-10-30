@@ -233,7 +233,9 @@ func _son() -> void:
 	_slider("Tirs et explosions", "Les vôtres et ceux des autres.", "vol_armes", 0.0, 1.0, 0.05, _pct)
 	_slider("Pas et mouvements", "Pour entendre venir les autres.", "vol_pas", 0.0, 1.0, 0.05, _pct)
 	_slider("Interface et marqueurs", "Marqueurs de touche, achats, battements de cœur.", "vol_ui", 0.0, 1.0, 0.05, _pct)
-	_slider("Ambiance", "Vent, avion, parachute.", "vol_ambiance", 0.0, 1.0, 0.05, _pct)
+	_slider("Ambiance", "Vent, avion, parachute, musique de fin de partie.", "vol_ambiance", 0.0, 1.0, 0.05, _pct)
+	_choice("Sons à l'écran", "Arcs autour du réticule : pas (blanc) et tirs (orange) proches, d'où ils viennent.", "sons_visuels",
+		[true, false], ["Affichés", "Masqués"])
 
 
 func _jeu() -> void:

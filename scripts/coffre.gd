@@ -11,6 +11,7 @@ signal opened(coffre: Coffre)
 var is_open := false
 var ravitaillement := false
 var largage := false
+var aerien := false             # ravitaillement aérien (milieu de partie)
 var _falling := false
 var _fall_to := 0.0
 var _chute: Node3D
@@ -53,6 +54,9 @@ func _ready() -> void:
 	if largage:
 		wood.albedo_color = Color(0.32, 0.4, 0.26)
 		scale = Vector3(1.4, 1.4, 1.4)
+	if aerien:
+		wood.albedo_color = Color(0.55, 0.22, 0.18)
+		scale = Vector3(1.6, 1.6, 1.6)
 	var metal := _mat(Color(0.2, 0.2, 0.22))
 	_box(self, Vector3(0.9, 0.42, 0.55), Vector3(0, 0.21, 0), wood)
 	for x in [-0.36, 0.36]:
@@ -65,6 +69,8 @@ func _ready() -> void:
 	var c := Color(0.4, 0.9, 0.5) if ravitaillement else Color(1.0, 0.78, 0.3)
 	if largage:
 		c = Color(0.45, 1.0, 0.55)
+	if aerien:
+		c = Color(1.0, 0.35, 0.2)
 	_glow = _box(self, Vector3(0.94, 0.02, 0.59), Vector3(0, 0.425, 0), _mat(c, 3.0))
 	var body := StaticBody3D.new()
 	body.collision_layer = G.L_WORLD
@@ -76,11 +82,11 @@ func _ready() -> void:
 	cs.position.y = 0.25
 	body.add_child(cs)
 	add_child(body)
-	if largage:
+	if largage or aerien:
 		_make_largage_marks(c)
-	if ravitaillement or largage:
+	if ravitaillement or largage or aerien:
 		var l := Label3D.new()
-		l.text = "LARGAGE DE CLASSE" if largage else "RAVITAILLEMENT"
+		l.text = "LARGAGE DE CLASSE" if largage else ("RAVITAILLEMENT AÉRIEN" if aerien else "RAVITAILLEMENT")
 		l.font_size = 40
 		l.outline_size = 10
 		l.pixel_size = 0.006
@@ -139,6 +145,8 @@ func drop_from(height: float) -> void:
 func label() -> String:
 	if largage:
 		return "Ouvrir le largage : choisir une classe"
+	if aerien:
+		return "Ouvrir le ravitaillement aérien"
 	return "Se ravitailler (munitions et plaques)" if ravitaillement else "Ouvrir le coffre"
 
 

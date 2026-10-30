@@ -1424,6 +1424,79 @@ func _check_tyroliennes() -> String:
 	return "tyrolienne en %.1f s, bot au sommet en %.1f s" % [t_up, t_bot]
 
 
+func _check_rythme() -> String:
+	await start_partie(2, 1)
+	partie.brume.time_scale = 0.0
+	await _until(func(): return bots[0].etat == Joueur.Etat.SOL and bots[1].etat == Joueur.Etat.SOL, 60.0)
+	for bt in bots:
+		(bt.get_node("Bot") as Bot).set_physics_process(false)
+		bt.scripted = Intentions.new()
+	var base := Vector3(0, ile.ground_at(0, -15) + 0.1, -15)
+	player.spawn_at(base, 0.0)
+	player.ui_block = false
+	player.scripted = Intentions.new()
+	var prey := bots[0]
+	var foe := bots[1]
+	# Son à l'écran : un bot qui court à côté.
+	G.settings.sons_visuels = true
+	foe.spawn_at(base + Vector3(10, 0, 0), 0.0)
+	foe.scripted.move = Vector2(0, -1)
+	foe.scripted.sprint = true
+	await _wait(0.5)
+	if not hud._cross._sons.any(func(so): return so[1] == "pas"):
+		_fail("sons à l'écran : pas non montrés (%.1f m/s)" % foe.hspeed)
+	foe.scripted.move = Vector2.ZERO
+	# Élimination : −5 s au prochain redéploiement, au moins 200 € au sol, duel compté.
+	prey.arsenal.argent = 0
+	prey.spawn_at(base + Vector3(0, 0, -8), 0.0)
+	var items0 := pillage.items.size()
+	prey.sante.take(60.0, "torse", "balle", true, player)
+	prey.sante.take(200.0, "torse", "balle", true, player)
+	await _wait(0.1)
+	var money := pillage.items.slice(items0).filter(func(b): return b.type == Butin.Type.ARGENT)
+	if float(partie.info[player].bonus) != Partie.BONUS_ELIM or money.is_empty() or int(money[0].quantite) < Partie.ARGENT_ELIM:
+		_fail("élimination : bonus %.0f s, argent %s" % [float(partie.info[player].bonus), money.map(func(b): return b.quantite)])
+	# Mort du joueur : redéploiement plus court, résumé du duel dans la caméra de la mort.
+	foe.spawn_at(base + Vector3(6, 0, 6), 0.0)
+	await _wait(0.2)
+	player.sante.reset(0)
+	player.sante.take(40.0, "torse", "balle", true, foe)
+	player.sante.take(500.0, "torse", "balle", true, foe)
+	await _wait(0.3)
+	var expected := maxf(5.0, partie.respawn_time() - Partie.BONUS_ELIM)
+	if absf(partie.respawn_left - expected) > 0.5 or float(partie.info[player].bonus) != 0.0:
+		_fail("redéploiement : %.1f s au lieu de %.1f" % [partie.respawn_left, expected])
+	if not hud._kc_duel.text.contains("Lui : 100 dégâts (2 touches)"):
+		_fail("caméra de la mort : duel « %s »" % hud._kc_duel.text)
+	partie.info[player].respawn = 0.05
+	await _until(func(): return not player.sante.dead and player.etat != Joueur.Etat.DRONE, 3.0)
+	# Ravitaillement aérien annoncé, sur les cartes, plein de bonnes choses.
+	var titles := []
+	partie.announce.connect(func(t, _s): titles.append(t))
+	partie._ravitaillement_aerien()
+	await _wait(0.2)
+	var air := partie.aerien
+	if not is_instance_valid(air) or not pillage.chests.has(air) or titles != ["RAVITAILLEMENT AÉRIEN"] or hud._annonce_titre.text != "RAVITAILLEMENT AÉRIEN":
+		_fail("ravitaillement aérien : %s, annonces %s" % [air, titles])
+	else:
+		await _until(func(): return air.can_open(), 20.0)
+		var n0 := pillage.items.size()
+		air.open_chest()
+		await _wait(0.1)
+		var got := pillage.items.slice(n0)
+		if not got.any(func(b): return b.type == Butin.Type.ARME and int(b.arme.rarete) == 3) or not got.any(func(b): return b.type == Butin.Type.ARGENT and int(b.quantite) == 1500):
+			_fail("ravitaillement aérien : contenu %s" % [got.map(func(b): return b.label())])
+	# Musique au dernier cercle.
+	partie.brume.phase = Brume.PHASES.size()
+	await _wait(0.5)
+	if not hud._musique.playing:
+		_fail("musique de fin : muette")
+	player.scripted = null
+	_end_partie()
+	await _wait(0.1)
+	return "rythme : bonus, argent, ravitaillement, musique"
+
+
 ## Contrats (reconnaissance, trésor, prime) et séries de la boutique (drone, frappe).
 func _check_contrats() -> String:
 	await start_partie(2, 1)
@@ -1659,6 +1732,9 @@ func _check_bots() -> String:
 		_fail("progression : partie mal comptée (%s)" % [Progression.data.stats])
 	out.append(await _check_progression())
 
+	# Rythme : bonus de redéploiement, argent des éliminations, ravitaillement aérien, annonces,
+	# musique, sons à l'écran, résumé du duel.
+	out.append(await _check_rythme())
 	# Contrats et séries.
 	out.append(await _check_contrats())
 	# Tyroliennes.
@@ -2185,6 +2261,16 @@ func _tour() -> void:
 	await _wait(0.3)
 	await _shot(dir, "44_carte_contrat")
 	hud.toggle_map()
+	# Ravitaillement aérien annoncé, et sons à l'écran (deux bots qui courent autour).
+	partie._ravitaillement_aerien()
+	partie.aerien.global_position = player.global_position + (-player.global_basis.z) * 14.0 + Vector3(0, 25, 0)
+	for k in 2:
+		var rb := bots[2 + k]
+		rb.spawn_at(player.global_position + Vector3(8 - 16 * k, 0.1, 5), 0.0)
+		rb.scripted.move = Vector2(0, -1)
+		rb.scripted.sprint = true
+	await _wait(0.6)
+	await _shot(dir, "51_annonce")
 	# Tyrolienne du Phare : au pied, pendant la montée, au sommet.
 	var tz: Tyrolienne = ile.tyroliennes[0]
 	var back := Vector3(tz.bas.x - tz.haut.x, 0, tz.bas.z - tz.haut.z).normalized()

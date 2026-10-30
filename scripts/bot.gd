@@ -259,6 +259,13 @@ func _think() -> void:
 		return
 	elif is_instance_valid(_crate) and not _crate.can_open() and _crate.is_open:
 		_crate = null
+	# 2 bis. Le ravitaillement aérien attire tout le monde (pas trop loin, dans la zone sûre).
+	if partie and is_instance_valid(partie.aerien) and partie.aerien.can_open() \
+			and partie.aerien.global_position.distance_to(p) < 260.0 and not partie.brume.is_outside(partie.aerien.global_position) \
+			and not _blacklist.has(partie.aerien.get_instance_id()):
+		_set_goal(partie.aerien.global_position, "pillage", partie.aerien)
+		state = "aerien"
+		return
 	# 3. Assez d'argent pour une classe : à la station d'achat la plus proche.
 	if a.perks.is_empty() and a.argent >= int(Boutique.article("largage").prix) and pillage:
 		var st := _nearest(pillage.shops, p, 260.0)

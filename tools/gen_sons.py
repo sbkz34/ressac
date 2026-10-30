@@ -4,7 +4,7 @@
 Pas sur la terre, sur un sol dur et dans l'eau (plusieurs variantes, plus naturels que l'ancien
 « step »), vent de chute libre et sous la voile, ouverture du parachute, sortie de l'avion, moteur
 de l'avion, entrée dans l'eau et brasse, marqueurs de touche (corps, tête, armure, armure brisée),
-battements de cœur quand on est à bout de forces, tyrolienne, ouverture de coffre.
+battements de cœur quand on est à bout de forces, tyrolienne, ouverture de coffre, annonce, musique de fin de partie.
 
     python3 tools/gen_sons.py        → assets/sfx/*.wav
 """
@@ -223,3 +223,60 @@ creak = np.sin(2 * np.pi * np.cumsum(f) / SR) * (0.6 + 0.4 * (np.sin(2 * np.pi *
 creak = band(creak, 300, 2500) * np.clip(tt / 0.02, 0, 1) * np.exp(-tt * 9.0) * 0.5
 thud = low(white(d), 300) * env(d, 0.002, 0.06) * 1.4 + np.sin(2 * np.pi * 110 * tt) * env(d, 0.001, 0.05)
 write("coffre.wav", place(d, [(0.0, click, 0.9), (0.03, creak, 0.7), (0.22, thud, 1.0)]), peak=0.7)
+
+# Annonce (Brume, survivants, ravitaillement) : impact grave et souffle qui monte.
+d = 1.6
+tt = t(d)
+hit = (np.sin(2 * np.pi * 55 * tt) + 0.5 * np.sin(2 * np.pi * 82.5 * tt) + 0.3 * np.sin(2 * np.pi * 110 * tt)) * np.exp(-tt * 2.2)
+brass = sum(np.sin(2 * np.pi * f * tt) / (h + 1) for h, f in enumerate([220, 330, 440, 660])) * np.exp(-tt * 3.0) * np.clip(tt / 0.03, 0, 1)
+rise = band(white(d), 600, 4000) * np.clip((tt - 0.05) / 0.8, 0, 1) * np.exp(-np.maximum(tt - 0.85, 0) * 8.0) * 0.25
+write("annonce.wav", low(hit, 400) * 0.9 + low(brass, 2500) * 0.35 + rise, peak=0.75)
+
+# Musique de fin de partie (boucle de 16 s, 120 bpm) : basse obstinée en ré mineur, grosse caisse,
+# charleston, nappe tendue. La fin de la boucle rejoint son début.
+bpm = 120.0
+beat = 60.0 / bpm
+d = 32 * beat
+n = int(d * SR)
+tt = np.arange(n) / SR
+mus = np.zeros(n)
+def note(f, start, dur, amp, shape="saw"):
+    i0 = int(start * SR)
+    m = min(int(dur * SR), n - i0)
+    if m <= 0:
+        return
+    x = np.arange(m) / SR
+    if shape == "saw":
+        w = sum(np.sin(2 * np.pi * f * k * x) / k for k in range(1, 7))
+    else:
+        w = np.sin(2 * np.pi * f * x) + 0.3 * np.sin(2 * np.pi * 2 * f * x)
+    e = np.clip(x / 0.01, 0, 1) * np.exp(-x * 5.0)
+    mus[i0:i0 + m] += w * e * amp
+bass = [73.42, 73.42, 87.31, 73.42, 65.41, 65.41, 77.78, 69.30]   # ré, ré, fa, ré, do, do, mi♭, do♯
+for bar in range(8):
+    for k in range(8):
+        f = bass[bar] * (2.0 if k in (3, 7) else 1.0)
+        note(f, (bar * 4 + k * 0.5) * beat, 0.45 * beat, 0.28)
+mus = low(mus, 900)
+kick_len = int(0.25 * SR)
+kx = np.arange(kick_len) / SR
+kick = np.sin(2 * np.pi * (45 + 90 * np.exp(-kx * 30)) * kx) * np.exp(-kx * 14)
+for b in range(32):
+    i0 = int(b * beat * SR)
+    m = min(kick_len, n - i0)
+    mus[i0:i0 + m] += kick[:m] * 0.9
+hat = band(white(0.05), 6000, 12000) * env(0.05, 0.001, 0.02)
+for b in range(64):
+    i0 = int((b * 0.5 + 0.25) * beat * SR)
+    m = min(len(hat), n - i0)
+    mus[i0:i0 + m] += hat[:m] * (0.25 if b % 2 else 0.15)
+snare = band(white(0.2), 800, 6000) * env(0.2, 0.001, 0.07)
+for b in range(32):
+    if b % 4 in (1, 3):
+        i0 = int(b * beat * SR)
+        m = min(len(snare), n - i0)
+        mus[i0:i0 + m] += snare[:m] * 0.35
+pad = sum(np.sin(2 * np.pi * f * tt + k) for k, f in enumerate([293.66, 349.23, 440.0, 466.16]))
+pad = low(pad, 1800) * (0.5 + 0.5 * np.sin(2 * np.pi * tt / (8 * beat))) * 0.07
+mus += pad
+write("musique_fin.wav", mus, peak=0.7, fade=False)
