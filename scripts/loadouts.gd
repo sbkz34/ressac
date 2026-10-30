@@ -79,6 +79,25 @@ static func _valid(d: Dictionary) -> bool:
 	return true
 
 
+## Accessoires d'une arme de la classe (ceux choisis à l'armurier, sinon ceux par défaut).
+static func acc_de(d: Dictionary, slot: String) -> Array:
+	var arme: String = d[slot]
+	var all: Dictionary = d.get("acc", {})
+	var key := "%s:%s" % [slot, arme]
+	if all.has(key) and all[key] is Array:
+		return (all[key] as Array).filter(func(x): return Accessoires.choix(arme, String(Accessoires.info(x).get("e", ""))).has(x))
+	return Accessoires.defaut(arme)
+
+
+## Copie de la classe avec les accessoires d'une de ses armes changés.
+static func avec_acc(d: Dictionary, slot: String, acc: Array) -> Dictionary:
+	var out := d.duplicate(true)
+	var all: Dictionary = out.get("acc", {})
+	all["%s:%s" % [slot, String(d[slot])]] = acc.duplicate()
+	out["acc"] = all
+	return out
+
+
 ## Atouts proposés dans une colonne.
 static func column(col: int) -> Array:
 	var out := []

@@ -8,7 +8,7 @@ extends Control
 signal closed
 
 var _sel := 0
-var _view := "liste"              # "liste", "arme", "atouts"
+var _view := "liste"              # "liste", "arme", "atouts", "armurier"
 var _slot := "principale"         # emplacement en cours de choix
 var _preview := ""                # arme regardée dans le choix
 var _class_cards: Array[Button] = []
@@ -20,6 +20,12 @@ var _perk_cards := {}
 var _body: Control
 var _hint: Label
 var _first_focus: Control
+var _apercu: ApercuArme
+var _emp := "bouche"              # emplacement choisi à l'armurier
+var _acc_preview: Array = []       # configuration regardée à l'armurier
+var _emp_cards := {}
+var _opt_box: VBoxContainer
+var _arm_stats: VBoxContainer
 
 
 func _ready() -> void:
@@ -36,6 +42,11 @@ func open(k := 0) -> void:
 
 func _cls() -> Dictionary:
 	return Loadouts.get_one(_sel)
+
+
+## L'arme d'un emplacement de la classe, avec ses accessoires.
+func _arme(d: Dictionary, slot: String) -> Dictionary:
+	return Armes.nouvelle(String(d[slot]), Loadouts.RARETE, Loadouts.acc_de(d, slot))
 
 
 func _save(d: Dictionary) -> void:
@@ -73,6 +84,13 @@ func _show(view: String) -> void:
 			UIStyle.label(head, "%d · %s" % [_sel + 1, String(d.nom).to_upper()], "titre2", 22, UIStyle.DOUX)
 			UIStyle.label(head, "ARME %s" % ("PRINCIPALE" if _slot == "principale" else "SECONDAIRE"), "titre", 34, UIStyle.TEXTE)
 			UIStyle.label(head, "les armes de classe sont toujours légendaires", "texte", 17, UIStyle.DOUX).size_flags_vertical = Control.SIZE_SHRINK_END
+		"armurier":
+			UIStyle.label(head, "%d · %s" % [_sel + 1, String(d.nom).to_upper()], "titre2", 22, UIStyle.DOUX)
+			UIStyle.label(head, "ARMURIER", "titre", 34, UIStyle.TEXTE)
+			for slot in ["principale", "secondaire"]:
+				var tb := UIStyle.action(head, String(Armes.info(String(d[slot])).nom), slot == _slot, 0)
+				tb.add_theme_font_size_override("font_size", 18)
+				tb.pressed.connect(_open_armurier.bind(slot))
 		"atouts":
 			UIStyle.label(head, "%d · %s" % [_sel + 1, String(d.nom).to_upper()], "titre2", 22, UIStyle.DOUX)
 			UIStyle.label(head, "ATOUTS", "titre", 34, UIStyle.TEXTE)
@@ -83,6 +101,7 @@ func _show(view: String) -> void:
 		"liste": _build_liste()
 		"arme": _build_arme()
 		"atouts": _build_atouts()
+		"armurier": _build_armurier()
 	var foot := UIStyle.hbox(col, 12)
 	_hint = UIStyle.label(foot, "", "texte", 16, Color(0.8, 0.83, 0.86))
 	_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -93,7 +112,7 @@ func _show(view: String) -> void:
 			UIStyle.action(foot, "Retour", false, 150).pressed.connect(func(): closed.emit())
 		"arme":
 			UIStyle.action(foot, "Annuler", false, 150).pressed.connect(func(): _show("liste"))
-		"atouts":
+		"atouts", "armurier":
 			UIStyle.action(foot, "Terminé", true, 180).pressed.connect(func(): _show("liste"))
 	_update_hint()
 	if _first_focus:
@@ -114,6 +133,9 @@ func _update_hint() -> void:
 				"A : équiper · B : annuler" if pad else "Clic : voir · double clic ou « Équiper » : prendre · Échap : annuler")
 		"atouts":
 			_hint.text = "Toucher un atout pour le choisir" if touch else ("A : choisir · B : terminé" if pad else "Clic : choisir · Échap : terminé")
+		"armurier":
+			_hint.text = "Toucher un emplacement, puis un accessoire" if touch else (
+				"Croix : emplacement, puis accessoire · A : poser · B : terminé" if pad else "Clic : poser · Échap : terminé")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -209,12 +231,28 @@ func _fill_detail() -> void:
 	var a := Armes.info(d.principale)
 	var name_row := UIStyle.hbox(pv, 12)
 	UIStyle.label(name_row, String(a.nom), "titre", 36)
-	UIStyle.label(name_row, "%s · chargeur %d" % [a.type, Armes.taille_chargeur(d.principale, Loadouts.RARETE)], "texte", 15, UIStyle.DOUX).size_flags_vertical = Control.SIZE_SHRINK_END
-	var img := UIStyle.weapon_image(pv, d.principale, Vector2(0, 150))
-	img.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_stats_grid(pv, d.principale, "")
+	UIStyle.label(name_row, "%s · chargeur %d" % [a.type, Armes.chargeur_de(_arme(d, "principale"))], "texte", 15, UIStyle.DOUX).size_flags_vertical = Control.SIZE_SHRINK_END
+	_apercu = ApercuArme.new()
+	_apercu.custom_minimum_size = Vector2(0, 130)
+	_apercu.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pv.add_child(_apercu)
+	_apercu.montrer(_arme(d, "principale"))
+	_stats_grid(pv, _arme(d, "principale"), {})
+	# Accessoires de l'arme principale (vers l'armurier).
+	var accb := UIStyle.card(_center, Vector2(0, 64))
+	accb.pressed.connect(_open_armurier.bind("principale"))
+	var ar := UIStyle.hbox(UIStyle.inside(accb, 10), 8)
+	UIStyle.label(ar, "ACCESSOIRES", "gras", 13, UIStyle.DOUX).size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var acc := Loadouts.acc_de(d, "principale")
+	for e in Accessoires.emplacements(String(d.principale)):
+		var cell := UIStyle.vbox(ar, 0)
+		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UIStyle.label(cell, String(Accessoires.NOMS_EMPLACEMENTS[e]).to_upper(), "gras", 11, UIStyle.DOUX)
+		var on := Accessoires.sur(acc, e)
+		UIStyle.label(cell, String(Accessoires.info(on).nom) if on != "" else "—", "titre", 17, UIStyle.TEXTE if on != "" else UIStyle.DOUX)
+	UIStyle.label(ar, "Armurier ›", "gras", 15, UIStyle.OR).size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	# Arme secondaire.
-	var sec := UIStyle.card(_center, Vector2(0, 104))
+	var sec := UIStyle.card(_center, Vector2(0, 96))
 	sec.pressed.connect(_open_arme.bind("secondaire"))
 	var sr := UIStyle.hbox(UIStyle.inside(sec, 12), 16)
 	UIStyle.weapon_image(sr, d.secondaire, Vector2(200, 74))
@@ -224,7 +262,7 @@ func _fill_detail() -> void:
 	UIStyle.label(sv, "ARME SECONDAIRE", "gras", 13, UIStyle.DOUX)
 	var sa := Armes.info(d.secondaire)
 	UIStyle.label(sv, String(sa.nom), "titre", 26)
-	UIStyle.label(sv, "%s · chargeur %d · élimine en %s" % [sa.type, Armes.taille_chargeur(d.secondaire, Loadouts.RARETE), UIStyle.ttk_text(d.secondaire)], "texte", 14, UIStyle.DOUX)
+	UIStyle.label(sv, "%s · chargeur %d · %d accessoires" % [sa.type, Armes.chargeur_de(_arme(d, "secondaire")), Loadouts.acc_de(d, "secondaire").size()], "texte", 14, UIStyle.DOUX)
 	# Atouts.
 	UIStyle.label(_right, "ATOUTS", "gras", 13, UIStyle.DOUX)
 	for c in 3:
@@ -253,16 +291,18 @@ func _fill_detail() -> void:
 		UIStyle.label(gv, g[2], "titre", 19)
 
 
-## Jauges d'une arme (et, dans le choix, comparées à l'arme équipée `ref_id`).
-func _stats_grid(parent: Node, id: String, ref_id: String, columns := 3) -> void:
+## Jauges d'une arme (et, dans le choix, comparées à l'arme équipée `ref`).
+func _stats_grid(parent: Node, w: Dictionary, ref: Dictionary, columns := 3) -> void:
 	var grid := GridContainer.new()
 	grid.columns = columns
 	grid.add_theme_constant_override("h_separation", 22)
 	grid.add_theme_constant_override("v_separation", 8)
 	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(grid)
-	var s := UIStyle.stats(id)
-	var r := UIStyle.stats(ref_id) if ref_id != "" else []
+	var id: String = w.id
+	var s := UIStyle.stats(w)
+	var r := UIStyle.stats(ref) if not ref.is_empty() else []
+	var same: bool = ref.is_empty() or (ref.id == w.id and ref.get("acc", []) == w.get("acc", []))
 	for k in UIStyle.STATS.size():
 		var cell := UIStyle.vbox(grid, 3)
 		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -271,7 +311,7 @@ func _stats_grid(parent: Node, id: String, ref_id: String, columns := 3) -> void
 		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var txt := UIStyle.ttk_text(id) if k == 5 else str(int(round(s[k])))
 		var color := UIStyle.TEXTE
-		if ref_id != "" and ref_id != id:
+		if not same:
 			var diff := int(round(s[k])) - int(round(r[k]))
 			if diff != 0:
 				color = UIStyle.MIEUX if diff > 0 else UIStyle.MOINS
@@ -280,7 +320,7 @@ func _stats_grid(parent: Node, id: String, ref_id: String, columns := 3) -> void
 		var j := UIStyle.Jauge.new()
 		j.value = s[k]
 		j.color = color
-		if ref_id != "":
+		if not ref.is_empty():
 			j.ref = r[k]
 		cell.add_child(j)
 
@@ -350,16 +390,20 @@ func _fill_weapon_detail() -> void:
 		n.queue_free()
 	var id := _preview
 	var a := Armes.info(id)
-	var current: String = _cls()[_slot]
+	var d := _cls()
+	var current: String = d[_slot]
+	var cand_d := d.duplicate(true)
+	cand_d[_slot] = id
+	var cand := _arme(cand_d, _slot)
 	UIStyle.weapon_image(_detail, id, Vector2(0, 130))
 	UIStyle.label(_detail, String(a.nom), "titre", 30)
-	UIStyle.label(_detail, "%s · chargeur %d · élimine en %s" % [a.type, Armes.taille_chargeur(id, Loadouts.RARETE), UIStyle.ttk_text(id)], "texte", 15, UIStyle.DOUX)
+	UIStyle.label(_detail, "%s · chargeur %d · élimine en %s" % [a.type, Armes.chargeur_de(cand), UIStyle.ttk_text(id)], "texte", 15, UIStyle.DOUX)
 	if id != current:
 		var leg := UIStyle.hbox(_detail, 14)
 		UIStyle.label(leg, "▮ arme équipée", "texte", 13, UIStyle.OR)
 		UIStyle.label(leg, "bleu : mieux", "texte", 13, UIStyle.MIEUX)
 		UIStyle.label(leg, "orange : moins bien", "texte", 13, UIStyle.MOINS)
-	_stats_grid(_detail, id, current, 2)
+	_stats_grid(_detail, cand, _arme(d, _slot), 2)
 	var sp := Control.new()
 	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -425,3 +469,122 @@ func _pick_perk(c: int, id: String) -> void:
 		var on: bool = other == id
 		badge.add_theme_stylebox_override("panel", UIStyle.badge_style(on))
 		(badge.get_child(0) as TextureRect).modulate = UIStyle.OR if on else Color(0.8, 0.83, 0.86)
+
+
+# ------------------------------------------------------------------------------------------------
+# Armurier : un accessoire par emplacement, aperçu 3D et jauges comparées en direct
+# ------------------------------------------------------------------------------------------------
+func _open_armurier(slot: String) -> void:
+	_slot = slot
+	var arme := String(_cls()[slot])
+	var emps := Accessoires.emplacements(arme)
+	if not emps.has(_emp):
+		_emp = emps[0] if not emps.is_empty() else "bouche"
+	_acc_preview = Loadouts.acc_de(_cls(), slot)
+	_show("armurier")
+
+
+func _build_armurier() -> void:
+	var d := _cls()
+	var arme := String(d[_slot])
+	var acc := Loadouts.acc_de(d, _slot)
+	# Les emplacements.
+	var left := UIStyle.vbox(_body, 8)
+	left.custom_minimum_size = Vector2(290, 0)
+	_emp_cards.clear()
+	for e in Accessoires.EMPLACEMENTS:
+		var possible := not Accessoires.choix(arme, e).is_empty()
+		var b := UIStyle.card(left, Vector2(290, 0), e == _emp and possible)
+		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		b.disabled = not possible
+		var v := UIStyle.vbox(UIStyle.inside(b, 10), 2)
+		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		UIStyle.label(v, String(Accessoires.NOMS_EMPLACEMENTS[e]).to_upper(), "gras", 12, UIStyle.DOUX)
+		var on := Accessoires.sur(acc, e)
+		var txt := "Indisponible" if not possible else (String(Accessoires.info(on).nom) if on != "" else "Aucun")
+		UIStyle.label(v, txt, "titre", 21, UIStyle.TEXTE if on != "" else UIStyle.DOUX)
+		if possible:
+			b.focus_entered.connect(_pick_emp.bind(e))
+			b.pressed.connect(_pick_emp.bind(e))
+			if e == _emp:
+				_first_focus = b
+		_emp_cards[e] = b
+	# Aperçu et jauges.
+	var mid := UIStyle.panel(_body)
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var mv := UIStyle.vbox(mid, 6)
+	UIStyle.label(mv, String(Armes.info(arme).nom), "titre", 28)
+	_apercu = ApercuArme.new()
+	_apercu.custom_minimum_size = Vector2(0, 160)
+	_apercu.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mv.add_child(_apercu)
+	_arm_stats = UIStyle.vbox(mv, 4)
+	# Les accessoires de l'emplacement choisi.
+	var right := UIStyle.vbox(_body, 8)
+	right.custom_minimum_size = Vector2(330, 0)
+	_opt_box = right
+	_fill_options()
+	_preview_acc(acc)
+
+
+func _pick_emp(e: String) -> void:
+	if e == _emp:
+		return
+	_emp = e
+	for k in _emp_cards:
+		UIStyle.style_card(_emp_cards[k], k == e)
+	_fill_options()
+	_preview_acc(Loadouts.acc_de(_cls(), _slot))
+
+
+func _fill_options() -> void:
+	for n in _opt_box.get_children():
+		_opt_box.remove_child(n)
+		n.queue_free()
+	var d := _cls()
+	var arme := String(d[_slot])
+	var acc := Loadouts.acc_de(d, _slot)
+	var current := Accessoires.sur(acc, _emp)
+	UIStyle.label(_opt_box, String(Accessoires.NOMS_EMPLACEMENTS[_emp]).to_upper(), "gras", 13, UIStyle.DOUX)
+	var ids := [""] + Accessoires.choix(arme, _emp)
+	for id in ids:
+		var b := UIStyle.card(_opt_box, Vector2(330, 0), id == current)
+		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		var v := UIStyle.vbox(UIStyle.inside(b, 10), 2)
+		v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var row := UIStyle.hbox(v, 8)
+		var nm := UIStyle.label(row, "Aucun" if id == "" else String(Accessoires.info(id).nom), "titre", 21)
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if id == current:
+			UIStyle.label(row, "POSÉ", "gras", 12, UIStyle.OR)
+		if id != "":
+			var desc := UIStyle.label(v, String(Accessoires.info(id).desc), "texte", 14, UIStyle.DOUX)
+			desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			desc.custom_minimum_size = Vector2(290, 0)
+		var with := Accessoires.poser(acc, _emp, id)
+		b.focus_entered.connect(_preview_acc.bind(with))
+		b.mouse_entered.connect(_preview_acc.bind(with))
+		b.pressed.connect(_poser.bind(id))
+
+
+## Aperçu d'une configuration : modèle 3D et jauges comparées à la configuration posée.
+func _preview_acc(acc: Array) -> void:
+	_acc_preview = acc
+	var d := _cls()
+	var w := Armes.nouvelle(String(d[_slot]), Loadouts.RARETE, acc)
+	_apercu.montrer(w)
+	for n in _arm_stats.get_children():
+		_arm_stats.remove_child(n)
+		n.queue_free()
+	_stats_grid(_arm_stats, w, _arme(d, _slot), 3)
+
+
+func _poser(id: String) -> void:
+	var d := _cls()
+	var acc := Accessoires.poser(Loadouts.acc_de(d, _slot), _emp, id)
+	_save(Loadouts.avec_acc(d, _slot, acc))
+	G.play("mag_in", -10.0)
+	var e := _emp
+	_show("armurier")
+	if _emp_cards.has(e):
+		_emp_cards[e].grab_focus.call_deferred()

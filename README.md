@@ -53,6 +53,13 @@ une arme dans une grille (comparaison avec l'arme équipée : bleu = mieux, oran
 les atouts colonne par colonne ; tout est enregistré tout de suite. En partie, un largage de
 classe s'ouvre sur un bandeau de 5 cartes en bas de l'écran.
 
+**Accessoires** : 5 emplacements par arme — bouche (silencieux : on n'apparaît plus sur la
+mini-carte des autres ; compensateur), canon (long, court), viseur (point rouge, holographique,
+lunette ×4), chargeur (étendu, rapide), crosse (stable, légère). Chacun a une contrepartie, visible
+dans les jauges. Les armes trouvées en portent selon leur rareté (rare 2, épique 3, légendaire 5),
+les armes de classe ceux choisis à l'**armurier** (aperçu 3D et comparaison en direct). Ils se
+voient sur les armes, en main, au sol et chez les bots.
+
 Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi). Toutes
 les touches se changent dans Réglages › Touches (manette et clavier séparément). Réglages ›
 Qualité graphique : Performance (rendu 3D à 60 %, sans ombres), Équilibrée (75 %), Qualité (100 %).
@@ -60,7 +67,8 @@ Qualité graphique : Performance (rendu 3D à 60 %, sans ombres), Équilibrée (
 | | |
 |---|---|
 | ![Classes](docs/captures/31_classes.jpg) | ![Choix d'arme](docs/captures/31b_classe.jpg) |
-| ![Atouts](docs/captures/31c_atouts.jpg) | ![Largage en partie](docs/captures/36_largage.jpg) |
+| ![Atouts](docs/captures/31c_atouts.jpg) | ![Armurier](docs/captures/31d_armurier.jpg) |
+| ![Largage en partie](docs/captures/36_largage.jpg) | ![Visée holographique](docs/captures/26_visee.jpg) |
 
 ### Jalon 3 : les règles de Résurgence
 

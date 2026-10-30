@@ -37,7 +37,8 @@ func _pick_weighted(weights: Array) -> int:
 
 func random_weapon(stars: int) -> Dictionary:
 	var id: String = ARMES_COURANTES[_pick_weighted(POIDS_ARMES)]
-	return Armes.nouvelle(id, _pick_weighted(RARETE_PAR_ETOILES[clampi(stars, 1, 4)]))
+	var r := _pick_weighted(RARETE_PAR_ETOILES[clampi(stars, 1, 4)])
+	return Armes.nouvelle(id, r, Accessoires.aleatoires(id, Accessoires.PAR_RARETE[r], rng))
 
 
 func random_ammo_kind() -> String:
@@ -247,7 +248,7 @@ func build_range(ile: Ile) -> void:
 	var k := 0
 	for id in ARMES_COURANTES:
 		var p: Vector3 = origin - fwd * 1.6 + side * (float(k) - 4.5) * 1.1
-		spawn_weapon(Armes.nouvelle(id, 2), ground.call(p) + Vector3(0, 0.02, 0), false)
+		spawn_weapon(Armes.nouvelle(id, 2, Accessoires.aleatoires(id, 3, rng)), ground.call(p) + Vector3(0, 0.02, 0), false)
 		k += 1
 	var c := Coffre.new()
 	c.ravitaillement = true

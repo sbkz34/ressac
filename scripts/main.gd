@@ -576,7 +576,7 @@ func _check() -> void:
 	# Ramasser une arme posée devant soi (la main libre la prend).
 	player.spawn_at(lane, 0.0)
 	await _wait(0.2)
-	var ground_w := pillage.spawn(Butin.make_arme(Armes.nouvelle("faucon", 1)), player.global_position + Vector3(0, 0, -1.2))
+	var ground_w := pillage.spawn(Butin.make_arme(Armes.nouvelle("faucon", 1, [])), player.global_position + Vector3(0, 0, -1.2))
 	await _wait(0.1)
 	if ar.target_item != ground_w:
 		_fail("ramassage : l'arme devant soi n'est pas proposée")
@@ -595,7 +595,7 @@ func _check() -> void:
 	ar.current().chargeur = 5
 	await _press("reload")
 	await _wait(2.4)
-	var size := Armes.taille_chargeur("faucon", 1)
+	var size := Armes.chargeur_de(ar.current())
 	if int(ar.current().chargeur) != size or int(ar.reserve["fusil"]) != 60 - (size - 5):
 		_fail("rechargement : %d dans le chargeur, %d en réserve" % [ar.current().chargeur, ar.reserve["fusil"]])
 
@@ -912,6 +912,35 @@ func _check() -> void:
 	ec._perk_cards[other_p].pressed.emit()
 	if Loadouts.get_one(2).atouts[1] != other_p:
 		_fail("classes : atout non choisi")
+	# Armurier : poser un silencieux sur l'arme principale, il est sur l'arme du largage.
+	ec._open_armurier("principale")
+	await get_tree().process_frame
+	ec._pick_emp("bouche")
+	ec._poser("silencieux")
+	var dacc := Loadouts.get_one(2)
+	if not Loadouts.acc_de(dacc, "principale").has("silencieux"):
+		_fail("armurier : silencieux pas posé (%s)" % [Loadouts.acc_de(dacc, "principale")])
+	var tmp_ar := player.arsenal
+	tmp_ar.apply_loadout(dacc)
+	if not tmp_ar.current().get("acc", []).has("silencieux") or not bool(Armes.de(tmp_ar.current()).silencieux):
+		_fail("armurier : l'arme de la classe n'a pas le silencieux")
+	# Effets : chargeur étendu, canon long ; silencieux absent de la mini-carte des autres.
+	var base_w := Armes.nouvelle("faucon", 0, [])
+	var ext_w := Armes.nouvelle("faucon", 3, ["canon_long", "chargeur_etendu"])
+	if Armes.chargeur_de(ext_w) <= Armes.chargeur_de(base_w) or float(Armes.de(ext_w).portee[1]) <= float(Armes.de(base_w).portee[1]):
+		_fail("accessoires : chargeur %d / %d, portée %.0f" % [Armes.chargeur_de(ext_w), Armes.chargeur_de(base_w), Armes.de(ext_w).portee[1]])
+	tmp_ar.starting_kit()
+	G.shots.clear()
+	tmp_ar.slots = [Armes.nouvelle("faucon", 3, ["silencieux"]), {}]
+	tmp_ar.cur = 0
+	tmp_ar._shoot(tmp_ar.current(), Armes.de(tmp_ar.current()))
+	if not G.shots.is_empty():
+		_fail("silencieux : tir signalé sur la mini-carte")
+	tmp_ar.slots = [Armes.nouvelle("faucon", 0, []), {}]
+	tmp_ar._shoot(tmp_ar.current(), Armes.de(tmp_ar.current()))
+	if G.shots.is_empty():
+		_fail("tir sans silencieux absent de la mini-carte")
+	tmp_ar.starting_kit()
 	ec._show("liste")
 	ec._reset_class()
 	if Loadouts.get_one(2) != Loadouts.DEFAUTS[2]:
@@ -1011,7 +1040,7 @@ func _check_bots() -> String:
 	var brain0 := b0.get_node("Bot") as Bot
 	brain0.target_dummies = true
 	b0.spawn_at(line, deg_to_rad(float(cdt.cap)) + 0.4)
-	b0.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
+	b0.arsenal.slots = [Armes.nouvelle("faucon", 2, []), {}]
 	b0.arsenal.reserve["fusil"] = 240
 	var t_dummy := await _until(func(): return downed[0] >= 1, 25.0)
 	if t_dummy < 0.0:
@@ -1026,7 +1055,7 @@ func _check_bots() -> String:
 	duel[0].spawn_at(lzp + Vector3(-15, 0, -4), -PI / 2)
 	duel[1].spawn_at(lzp + Vector3(15, 0, -4), PI / 2)
 	for d in duel:
-		d.arsenal.slots = [Armes.nouvelle("faucon", 1), {}]
+		d.arsenal.slots = [Armes.nouvelle("faucon", 1, []), {}]
 		d.arsenal.reserve["fusil"] = 240
 		d.sante.reset(3)
 	var t_duel := await _until(func(): return duel[0].sante.dead or duel[1].sante.dead, 30.0)
@@ -1064,7 +1093,7 @@ func _check_bots() -> String:
 	prey.sante.reset(0)
 	player.spawn_at(lzp + Vector3(9, 0, 5), 0.0)
 	player.ui_block = false
-	player.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]
+	player.arsenal.slots = [Armes.nouvelle("faucon", 2, []), {}]
 	player.arsenal.cur = 0
 	player.arsenal.reserve["fusil"] = 240
 	var feed := []
@@ -1278,7 +1307,7 @@ func _icones(dir: String) -> void:
 	var wood: StandardMaterial3D = (Armes.materiaux(0).wood as StandardMaterial3D).duplicate()
 	wood.albedo_color = Color(1.0, 0.82, 0.68)
 	var mats := {"metal": mk.call(Color(0.46, 0.48, 0.52), 0.55, 0.38), "dark": mk.call(Color(0.2, 0.21, 0.23), 0.3, 0.55),
-		"wood": wood, "glow": mk.call(Color(1.0, 0.8, 0.35), 0.0, 0.5)}
+		"wood": wood, "glow": mk.call(Color(1.0, 0.8, 0.35), 0.0, 0.5), "verre": Armes.verre()}
 	var cam := Camera3D.new()
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	vp.add_child(cam)
@@ -1407,7 +1436,7 @@ func _tour() -> void:
 	var line := Vector3(float(cdt.x), 0, float(cdt.z))
 	line.y = ile.ground_at(line.x, line.z) + 0.1
 	player.spawn_at(line, deg_to_rad(float(cdt.cap)))
-	ar.slots = [Armes.nouvelle("faucon", 2), Armes.nouvelle("aiguille", 3)]
+	ar.slots = [Armes.nouvelle("faucon", 3, ["compensateur", "canon_long", "holo", "chargeur_etendu", "crosse_stable"]), Armes.nouvelle("aiguille", 3)]
 	ar.cur = 0
 	ar.view.set_weapon(ar.current(), false)
 	player.scripted = Intentions.new()
@@ -1452,6 +1481,10 @@ func _tour() -> void:
 	await _shot(dir, "31b_classe")
 	lobby.ecran_classes._open_atouts()
 	await _shot(dir, "31c_atouts")
+	lobby.ecran_classes._open_armurier("principale")
+	lobby.ecran_classes._pick_emp("viseur")
+	await _shot(dir, "31d_armurier")
+	lobby.ecran_classes._show("liste")
 	await start_partie(0)
 	partie.brume.time_scale = 80.0
 	await _until(func(): return partie.brume.phase >= 3 and partie.brume.closing, 30.0)

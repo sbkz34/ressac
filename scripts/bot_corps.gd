@@ -76,15 +76,16 @@ static func _make(posture: int, tenue: int) -> ArrayMesh:
 
 
 ## Maillage fusionné d'un modèle d'arme, partagé (bots, armes au sol).
-static func gun_mesh(id: String) -> ArrayMesh:
-	if not _guns.has(id):
-		_guns[id] = _make_gun(id)
-	return _guns[id]
+static func gun_mesh(id: String, acc: Array = []) -> ArrayMesh:
+	var key := "%s|%s" % [id, ",".join(PackedStringArray(acc))]
+	if not _guns.has(key):
+		_guns[key] = _make_gun(id, acc)
+	return _guns[key]
 
 
-static func _make_gun(id: String) -> ArrayMesh:
+static func _make_gun(id: String, acc: Array = []) -> ArrayMesh:
 	# Le modèle de l'arme (silhouette de Dernière Vague) fusionné en un seul maillage.
-	var model := GunShapes.build_model(id, Armes.materiaux(0), 1.0)
+	var model := GunShapes.build_model(id, Armes.materiaux(0), 1.0, acc)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var stack: Array = [[model, Transform3D.IDENTITY]]
@@ -143,14 +144,10 @@ func follow(j: Joueur) -> void:
 		_body.mesh = _meshes[key]
 	var w := j.arsenal.current()
 	var id: String = w.get("id", "")
-	if id != _gun_id:
-		_gun_id = id
-		if id == "":
-			_gun.mesh = null
-		else:
-			if not _guns.has(id):
-				_guns[id] = _make_gun(id)
-			_gun.mesh = _guns[id]
+	var key := "%s|%s" % [id, ",".join(PackedStringArray(w.get("acc", [])))]
+	if key != _gun_id:
+		_gun_id = key
+		_gun.mesh = null if id == "" else gun_mesh(id, w.get("acc", []))
 	# L'arme suit la visée (tangage de la tête), à hauteur d'épaule selon la posture.
 	var shoulder := {Joueur.Posture.DEBOUT: 1.38, Joueur.Posture.ACCROUPI: 0.98, Joueur.Posture.COUCHE: 0.32}
 	_gun.position = Vector3(0.18, float(shoulder[p]), -0.32)

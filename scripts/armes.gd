@@ -63,11 +63,12 @@ const ARMES := {
 }
 
 ## Raretés : la couleur du butin et des armes, et un petit bonus (chargeur, dispersion, visée).
+## Raretés : la couleur du butin et des armes, et le nombre d'accessoires (accessoires.gd).
 const RARETES := [
-	{"nom": "commune", "couleur": Color(0.82, 0.82, 0.8), "chargeur": 1.0, "disp": 1.0, "ads": 1.0},
-	{"nom": "rare", "couleur": Color(0.3, 0.6, 1.0), "chargeur": 1.2, "disp": 0.92, "ads": 0.95},
-	{"nom": "épique", "couleur": Color(0.72, 0.35, 1.0), "chargeur": 1.35, "disp": 0.85, "ads": 0.9},
-	{"nom": "légendaire", "couleur": Color(1.0, 0.72, 0.15), "chargeur": 1.5, "disp": 0.78, "ads": 0.85},
+	{"nom": "commune", "couleur": Color(0.82, 0.82, 0.8)},
+	{"nom": "rare", "couleur": Color(0.3, 0.6, 1.0)},
+	{"nom": "épique", "couleur": Color(0.72, 0.35, 1.0)},
+	{"nom": "légendaire", "couleur": Color(1.0, 0.72, 0.15)},
 ]
 
 const PLAQUE := 50.0
@@ -80,24 +81,80 @@ static func info(id: String) -> Dictionary:
 	return ARMES.get(id, ARMES["p9"])
 
 
-## Une arme précise (au sol, en main) : identifiant, rareté, balles dans le chargeur.
-static func nouvelle(id: String, rarete := 0) -> Dictionary:
-	return {"id": id, "rarete": rarete, "chargeur": taille_chargeur(id, rarete)}
+## Une arme précise (au sol, en main) : identifiant, rareté, accessoires, balles dans le
+## chargeur. Sans accessoires donnés, ils sont tirés au sort selon la rareté.
+static func nouvelle(id: String, rarete := 0, acc = null) -> Dictionary:
+	var a: Array = acc if acc is Array else Accessoires.aleatoires(id, Accessoires.PAR_RARETE[clampi(rarete, 0, 3)])
+	var w := {"id": id, "rarete": rarete, "acc": a.duplicate()}
+	w["chargeur"] = chargeur_de(w)
+	return w
 
 
-static func taille_chargeur(id: String, rarete: int) -> int:
-	return int(round(float(info(id).chargeur) * float(RARETES[rarete].chargeur)))
+## Taille du chargeur de base (sans accessoires).
+static func taille_chargeur(id: String, _rarete := 0) -> int:
+	return int(info(id).chargeur)
+
+
+static func chargeur_de(w: Dictionary) -> int:
+	return int(de(w).chargeur)
+
+
+static var _eff := {}
+
+
+## Caractéristiques d'une arme précise : la base, modifiée par ses accessoires.
+static func de(w: Dictionary) -> Dictionary:
+	if w.is_empty():
+		return info("p9")
+	var acc: Array = w.get("acc", [])
+	var key := "%s|%s" % [w.id, ",".join(PackedStringArray(acc))]
+	if _eff.has(key):
+		return _eff[key]
+	var a := info(w.id).duplicate(true)
+	var m := {"portee": 1.0, "ads": 1.0, "vitesse": 1.0, "recul": 1.0, "disp": 1.0, "disp_ads": 1.0,
+		"chargeur": 1.0, "recharge": 1.0, "fov": 1.0}
+	var silent := false
+	for id in acc:
+		var mods: Dictionary = Accessoires.info(id).get("mods", {})
+		for k in mods:
+			if k == "silencieux":
+				silent = true
+			elif m.has(k):
+				m[k] = float(m[k]) * float(mods[k])
+	a.portee = [float(a.portee[0]) * m.portee, float(a.portee[1]) * m.portee]
+	a.ads = float(a.ads) * m.ads
+	a.vitesse = float(a.vitesse) * m.vitesse
+	a.recul = float(a.recul) * m.recul
+	a.disp = float(a.disp) * m.disp
+	a.disp_ads = float(a.disp_ads) * m.disp_ads
+	a.chargeur = int(round(float(a.chargeur) * m.chargeur))
+	a.recharge = float(a.recharge) * m.recharge
+	a.ads_fov = float(a.ads_fov) * m.fov
+	a.silencieux = silent
+	_eff[key] = a
+	return a
+
+
+## Dégâts d'une balle de cette arme précise (portée modifiée par les accessoires).
+static func degats_de(w: Dictionary, dist: float, zone: String) -> float:
+	return _degats(de(w), dist, zone)
 
 
 static func nom_complet(w: Dictionary) -> String:
 	if w.is_empty():
 		return ""
-	return "%s (%s)" % [info(w.id).nom, RARETES[int(w.rarete)].nom]
+	var n: int = w.get("acc", []).size()
+	if n == 0:
+		return "%s (%s)" % [info(w.id).nom, RARETES[int(w.rarete)].nom]
+	return "%s (%s · %d accessoire%s)" % [info(w.id).nom, RARETES[int(w.rarete)].nom, n, "s" if n > 1 else ""]
 
 
 ## Dégâts d'une balle selon la distance et la zone touchée.
 static func degats(id: String, dist: float, zone: String) -> float:
-	var a := info(id)
+	return _degats(info(id), dist, zone)
+
+
+static func _degats(a: Dictionary, dist: float, zone: String) -> float:
 	var r0: float = a.portee[0]
 	var r1: float = a.portee[1]
 	var f := 1.0
@@ -117,6 +174,18 @@ static func coups_pour_tuer(id: String, dist := 5.0) -> int:
 # Matériaux des modèles, teintés selon la rareté
 # ------------------------------------------------------------------------------------------------
 static var _mats := {}
+static var _verre: StandardMaterial3D
+
+
+## Vitre des viseurs : presque transparente, légèrement bleutée.
+static func verre() -> StandardMaterial3D:
+	if _verre == null:
+		_verre = StandardMaterial3D.new()
+		_verre.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_verre.albedo_color = Color(0.55, 0.75, 0.9, 0.12)
+		_verre.roughness = 0.1
+		_verre.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return _verre
 
 
 static func _mat(c: Color, metal: float, rough: float, glow := Color(0, 0, 0), energy := 0.0) -> StandardMaterial3D:
@@ -149,6 +218,6 @@ static func materiaux(rarete: int) -> Dictionary:
 		if rarete >= 2:
 			wood = _mat(tint.darkened(0.55), 0.3, 0.4, tint, 0.08)
 	var glow := _mat(tint, 0.0, 0.5, tint, 2.5)
-	var m := {"metal": metal, "dark": dark, "wood": wood, "glow": glow}
+	var m := {"metal": metal, "dark": dark, "wood": wood, "glow": glow, "verre": verre()}
 	_mats[rarete] = m
 	return m

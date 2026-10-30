@@ -202,8 +202,10 @@ static func ttk(id: String) -> float:
 	return float(Armes.coups_pour_tuer(id) - 1) * float(Armes.info(id).rof)
 
 
-static func stats(id: String) -> Array:
-	var a := Armes.info(id)
+## Statistiques d'une arme précise (avec ses accessoires).
+static func stats(w: Dictionary) -> Array:
+	var id: String = w.id
+	var a := Armes.de(w)
 	var dmg := float(a.dmg) * float(a.plombs)
 	var p1 := float(a.portee[1])
 	var out := [

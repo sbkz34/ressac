@@ -128,7 +128,7 @@ func _build(w: Dictionary) -> void:
 	_heavy = false
 	var mats := Armes.materiaux(int(w.get("rarete", 0)))
 	var model_scale := 1.0
-	_gun = GunShapes.build_model(w.id, mats, model_scale)
+	_gun = GunShapes.build_model(w.id, mats, model_scale, w.get("acc", []))
 	_gun_holder.add_child(_gun)
 	_muzzle = _gun.get_meta("muzzle")
 	_top = _gun.get_meta("top")

@@ -119,7 +119,8 @@ func starting_kit() -> void:
 ## Largage de classe : les deux armes de la classe (légendaires, chargeurs pleins, munitions),
 ## ses atouts et ses équipements.
 func apply_loadout(d: Dictionary) -> void:
-	slots = [Armes.nouvelle(d.principale, Loadouts.RARETE), Armes.nouvelle(d.secondaire, Loadouts.RARETE)]
+	slots = [Armes.nouvelle(d.principale, Loadouts.RARETE, Loadouts.acc_de(d, "principale")),
+		Armes.nouvelle(d.secondaire, Loadouts.RARETE, Loadouts.acc_de(d, "secondaire"))]
 	cur = 0
 	perks = d.atouts.duplicate()
 	letal = d.get("letal", "grenade")
@@ -163,7 +164,7 @@ func can_use_weapon() -> bool:
 ## Multiplicateur de vitesse de déplacement (arme en main, visée, plaque).
 func move_mult() -> float:
 	var w := current()
-	var m := 1.0 if w.is_empty() else float(Armes.info(w.id).vitesse)
+	var m := 1.0 if w.is_empty() else float(Armes.de(w).vitesse)
 	m *= lerpf(1.0, 0.6, ads)
 	if plate_t > 0.0:
 		m *= 0.8
@@ -185,14 +186,14 @@ func simulate(i: Intentions, delta: float) -> void:
 	var allowed := can_use_weapon()
 	view.visible = allowed or joueur.etat == Joueur.Etat.ESCALADE
 	var w := current()
-	var a := {} if w.is_empty() else Armes.info(w.id)
+	var a := {} if w.is_empty() else Armes.de(w)
 
 	# Visée.
 	var want_ads := i.ads_held and allowed and not w.is_empty() and plate_t <= 0.0 and joueur.etat != Joueur.Etat.GLISSADE
 	_ads_pressed_t = 0.0 if (want_ads and not _was_ads) else _ads_pressed_t + delta
 	_was_ads = want_ads
 	if not w.is_empty():
-		var t := float(a.ads) * float(Armes.RARETES[int(w.rarete)].ads)
+		var t := float(a.ads)
 		ads = move_toward(ads, 1.0 if want_ads else 0.0, delta / maxf(t, 0.05))
 	else:
 		ads = 0.0
@@ -209,7 +210,7 @@ func simulate(i: Intentions, delta: float) -> void:
 		view.set_weapon(current())
 		changed.emit()
 		w = current()
-		a = Armes.info(w.id)
+		a = Armes.de(w)
 
 	# Action : ramasser / ouvrir ; le même bouton recharge quand il n'y a rien à portée (manette).
 	# (Les bots ne cherchent autour d'eux que de temps en temps : ils sont nombreux.)
@@ -296,8 +297,7 @@ func _update_spread(w: Dictionary, a: Dictionary) -> void:
 	if w.is_empty():
 		spread = 0.0
 		return
-	var rar: Dictionary = Armes.RARETES[int(w.rarete)]
-	var base := lerpf(float(a.disp), float(a.disp_ads), ads) * float(rar.disp) * (0.75 if has_perk("tete_froide") else 1.0)
+	var base := lerpf(float(a.disp), float(a.disp_ads), ads) * (0.75 if has_perk("tete_froide") else 1.0)
 	var move := clampf(joueur.hspeed / 6.0, 0.0, 1.5) * 1.6 * (1.0 - ads * 0.75)
 	var air := 0.0 if joueur.is_on_floor() or joueur.etat == Joueur.Etat.PARACHUTE else 2.0
 	spread = base + move + air + _bloom * (1.0 - ads * 0.6)
@@ -330,7 +330,7 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 				var s: Sante = col.get_meta("sante")
 				var zone: String = col.get_meta("zone")
 				var on_armor := s.armor > 0.0
-				var dmg := Armes.degats(w.id, origin.distance_to(end), zone)
+				var dmg := Armes.degats_de(w, origin.distance_to(end), zone)
 				total += s.take(dmg, zone, "balle", false, joueur)
 				var kind := "corps"
 				if s.dead:
@@ -351,9 +351,12 @@ func _shoot(w: Dictionary, a: Dictionary) -> void:
 			var m: Array = {"corps": ["marque_corps", -5.0], "tete": ["marque_tete", -4.0], "armure": ["marque_armure", -4.0],
 				"brise": ["armure_brisee", -2.0], "elimination": ["killmarker", -1.0]}.get(best, ["marque_corps", -5.0])
 			_snd(String(m[0]), float(m[1]), randf_range(0.97, 1.03))
-	_snd(String(a.son), -5.0, randf_range(0.96, 1.04), true)
-	# Tir sans silencieux : il apparaît sur la mini-carte des autres (les accessoires viendront).
-	if not bool(w.get("silencieux", false)):
+	# Silencieux : tir étouffé (plus bas, plus aigu) et absent de la mini-carte des autres.
+	var silent := bool(a.get("silencieux", false))
+	if silent:
+		_snd(String(a.son), -15.0, randf_range(1.25, 1.35), true)
+	else:
+		_snd(String(a.son), -5.0, randf_range(0.96, 1.04), true)
 		G.report_shot(joueur)
 	view.shot(float(a.recul))
 	_bloom = minf(_bloom + 0.35 * float(a.recul), 4.0)
@@ -380,8 +383,8 @@ func start_reload() -> void:
 	var w := current()
 	if w.is_empty() or reloading:
 		return
-	var a := Armes.info(w.id)
-	var size := Armes.taille_chargeur(w.id, int(w.rarete))
+	var a := Armes.de(w)
+	var size := Armes.chargeur_de(w)
 	if int(w.chargeur) >= size or int(reserve[a.munition]) <= 0:
 		return
 	reloading = true
@@ -394,8 +397,8 @@ func _finish_reload() -> void:
 	var w := current()
 	if w.is_empty():
 		return
-	var a := Armes.info(w.id)
-	var need := Armes.taille_chargeur(w.id, int(w.rarete)) - int(w.chargeur)
+	var a := Armes.de(w)
+	var need := Armes.chargeur_de(w) - int(w.chargeur)
 	var take := mini(need, int(reserve[a.munition]))
 	w.chargeur = int(w.chargeur) + take
 	reserve[a.munition] = int(reserve[a.munition]) - take
@@ -598,4 +601,4 @@ func _process(delta: float) -> void:
 	if view and joueur:
 		view.update_view(delta, joueur.hspeed, joueur.sprinting, joueur.is_on_floor())
 		var w := current()
-		view.hidden_by_scope = not w.is_empty() and w.id == "aiguille" and ads > 0.9
+		view.hidden_by_scope = not w.is_empty() and (w.id == "aiguille" or w.get("acc", []).has("lunette")) and ads > 0.9

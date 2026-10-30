@@ -108,7 +108,7 @@ func _ready() -> void:
 			# Un seul maillage par modèle d'arme (partagé, comme les armes des bots) : un appel de
 			# dessin par arme au sol au lieu d'un par pièce.
 			var model := MeshInstance3D.new()
-			model.mesh = BotCorps.gun_mesh(arme.id)
+			model.mesh = BotCorps.gun_mesh(arme.id, arme.get("acc", []))
 			model.material_override = _gun_mat(int(arme.rarete))
 			_spin.add_child(model)
 			model.rotation.y = PI / 2

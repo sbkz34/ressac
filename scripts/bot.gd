@@ -375,8 +375,8 @@ func _maintenance() -> void:
 		if not a.other().is_empty():
 			_i.swap = true
 		return
-	var info := Armes.info(w.id)
-	var size := Armes.taille_chargeur(w.id, int(w.rarete))
+	var info := Armes.de(w)
+	var size := Armes.chargeur_de(w)
 	var reserve := int(a.reserve[info.munition])
 	if int(w.chargeur) == 0 and reserve == 0 and not a.other().is_empty():
 		var o := a.other()
@@ -539,7 +539,7 @@ func _combat(delta: float, in_danger: bool) -> void:
 	_react_t -= delta
 	var aligned := miss < maxf(1.2, rad_to_deg(atan(0.45 / maxf(d, 0.1))))
 	var scoped: bool = w.is_empty() or w.id != "aiguille" or a.ads > 0.9
-	if _react_t <= 0.0 and aligned and scoped and not w.is_empty() and d < float(Armes.info(w.id).portee[1]) * 2.2 + 20.0:
+	if _react_t <= 0.0 and aligned and scoped and not w.is_empty() and d < float(Armes.de(w).portee[1]) * 2.2 + 20.0:
 		if _pause_t > 0.0:
 			_pause_t -= delta
 		else:
@@ -910,7 +910,7 @@ func _weapon_value(w: Dictionary) -> float:
 func _ideal_range(w: Dictionary) -> float:
 	if w.is_empty():
 		return 10.0
-	var r: Array = Armes.info(w.id).portee
+	var r: Array = Armes.de(w).portee
 	return clampf(float(r[0]) * 0.8, 5.0, 60.0)
 
 

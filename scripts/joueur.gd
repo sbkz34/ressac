@@ -867,7 +867,7 @@ func _update_camera(delta: float) -> void:
 		fov += 10.0 if tac_left > 0.0 else 4.0
 	var w := arsenal.current()
 	if not w.is_empty() and arsenal.ads > 0.0:
-		fov = lerpf(fov, float(Armes.info(w.id).ads_fov), arsenal.ads)
+		fov = lerpf(fov, float(Armes.de(w).ads_fov), arsenal.ads)
 	head.position.y = lerpf(head.position.y, eye, minf(1.0, 14.0 * delta))
 	cam.fov = lerpf(cam.fov, fov, minf(1.0, (20.0 if arsenal.ads > 0.0 else 8.0) * delta))
 	_roll = lerpf(_roll, roll, minf(1.0, 10.0 * delta))

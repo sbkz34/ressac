@@ -12,7 +12,7 @@ const KIND_OF := {
 }
 
 
-static func shape(weapon_id: String) -> Dictionary:
+static func shape(weapon_id: String, acc: Array = []) -> Dictionary:
 	var kind: String = KIND_OF.get(weapon_id, "pistol")
 	var parts: Array = []
 	var grip := Vector2.ZERO
@@ -164,7 +164,85 @@ static func shape(weapon_id: String) -> Dictionary:
 				_r(0.76, 0.02, 0.3, 0.026, 0.08, "metal"),
 			]
 			grip = Vector2(0.02, 0.0); muzzle = Vector2(0.9, 0.03); depth = 0.02
-	return {"parts": parts, "grip": grip, "muzzle": muzzle, "depth": depth, "kind": kind}
+	var sight := -100.0
+	if not acc.is_empty():
+		var r := _accessoires(parts, grip, muzzle, acc)
+		muzzle = r[0]
+		sight = r[1]
+	return {"parts": parts, "grip": grip, "muzzle": muzzle, "depth": depth, "kind": kind, "sight": sight}
+
+
+## Ajoute les accessoires à la silhouette : canon puis bouche au bout du canon, viseur sur le
+## dessus, chargeur sous le chargeur d'origine, crosse à l'arrière. Renvoie [la nouvelle bouche,
+## la hauteur de la ligne de visée du viseur posé (-100 : pas de viseur)].
+static func _accessoires(parts: Array, grip: Vector2, muzzle: Vector2, acc: Array) -> Array:
+	var top := -10.0
+	var top_x := grip.x + 0.1
+	var rear := 10.0
+	var rear_y := grip.y + 0.03
+	var mag: Dictionary = {}
+	for p in parts:
+		var hi: float = p.p.y + p.s.y / 2.0
+		if hi > top and p.p.x > grip.x - 0.02 and p.p.x < muzzle.x - 0.08:
+			top = hi
+			top_x = p.p.x
+		var back: float = p.p.x - p.s.x / 2.0
+		if back < rear:
+			rear = back
+			rear_y = p.p.y
+		if p.role == "mag" and mag.is_empty():
+			mag = p
+	if top < -5.0:
+		top = muzzle.y + 0.03
+	var has := func(id: String) -> bool: return acc.has(id)
+	var sight := -100.0
+	if has.call("canon_long"):
+		parts.append(_r(muzzle.x + 0.07, muzzle.y, 0.14, 0.022, 0.0, "metal"))
+		muzzle.x += 0.14
+	if has.call("canon_court"):
+		parts.append(_r(muzzle.x - 0.07, muzzle.y, 0.14, 0.05, 0.0, "dark"))
+	if has.call("silencieux"):
+		parts.append(_r(muzzle.x + 0.1, muzzle.y, 0.2, 0.042, 0.0, "dark"))
+		muzzle.x += 0.2
+	if has.call("compensateur"):
+		parts.append(_r(muzzle.x + 0.035, muzzle.y, 0.07, 0.05, 0.0, "dark"))
+		parts.append(_r(muzzle.x + 0.035, muzzle.y + 0.027, 0.012, 0.012, 0.0, "metal"))
+		muzzle.x += 0.07
+	# Viseurs : une vitre (on vise au travers) et un point lumineux dessus.
+	if has.call("point_rouge"):
+		parts.append(_r(top_x, top + 0.006, 0.055, 0.012, 0.0, "dark"))
+		parts.append(_r(top_x + 0.022, top + 0.03, 0.008, 0.036, 0.0, "verre"))
+		parts.append(_r(top_x + 0.012, top + 0.05, 0.032, 0.006, 0.0, "dark"))
+		parts.append(_r(top_x + 0.027, top + 0.03, 0.002, 0.004, 0.0, "glow"))
+		sight = top + 0.03
+	if has.call("holo"):
+		parts.append(_r(top_x, top + 0.008, 0.1, 0.016, 0.0, "dark"))
+		parts.append(_r(top_x + 0.045, top + 0.036, 0.008, 0.048, 0.0, "verre"))
+		parts.append(_r(top_x - 0.045, top + 0.036, 0.008, 0.048, 0.0, "verre"))
+		parts.append(_r(top_x, top + 0.064, 0.1, 0.008, 0.0, "dark"))
+		parts.append(_r(top_x + 0.05, top + 0.036, 0.002, 0.004, 0.0, "glow"))
+		sight = top + 0.036
+	if has.call("lunette"):
+		parts.append(_r(top_x - 0.03, top + 0.012, 0.025, 0.024, 0.0, "metal"))
+		parts.append(_r(top_x + 0.07, top + 0.012, 0.025, 0.024, 0.0, "metal"))
+		parts.append(_r(top_x + 0.02, top + 0.045, 0.28, 0.045, 0.0, "dark"))
+		parts.append(_r(top_x + 0.17, top + 0.045, 0.03, 0.055, 0.0, "dark"))
+		sight = top + 0.045
+	if not mag.is_empty():
+		var mp: Vector2 = mag.p
+		var ms: Vector2 = mag.s
+		var a: float = mag.a
+		var down := Vector2(sin(a), -cos(a))
+		if has.call("chargeur_etendu"):
+			parts.append(_r(mp.x + down.x * (ms.y / 2.0 + 0.04), mp.y + down.y * (ms.y / 2.0 + 0.04), ms.x * 0.95, 0.08, a, "metal", "mag"))
+		if has.call("chargeur_rapide"):
+			parts.append(_r(mp.x - down.x * 0.0, mp.y + down.y * (ms.y * 0.15), ms.x + 0.012, 0.025, a, "glow", "mag"))
+	if has.call("crosse_stable"):
+		parts.append(_r(rear - 0.08, rear_y - 0.01, 0.16, 0.085, 0.0, "dark"))
+	if has.call("crosse_legere"):
+		parts.append(_r(rear - 0.07, rear_y + 0.02, 0.15, 0.018, 0.0, "metal"))
+		parts.append(_r(rear - 0.14, rear_y - 0.01, 0.018, 0.07, 0.0, "metal"))
+	return [muzzle, sight]
 
 
 ## A rectangle; role marks the moving parts used by the reload animations
@@ -174,8 +252,8 @@ static func _r(x: float, y: float, w: float, h: float, a: float, mat: String, ro
 
 
 ## Builds the 3D model: the barrel points along -Z, the grip is at the origin.
-static func build_model(weapon_id: String, mats: Dictionary, scale := 1.0) -> Node3D:
-	var sh := shape(weapon_id)
+static func build_model(weapon_id: String, mats: Dictionary, scale := 1.0, acc: Array = []) -> Node3D:
+	var sh := shape(weapon_id, acc)
 	var root := Node3D.new()
 	var grip: Vector2 = sh.grip
 	var top := -10.0
@@ -207,6 +285,9 @@ static func build_model(weapon_id: String, mats: Dictionary, scale := 1.0) -> No
 	var m: Vector2 = (sh.muzzle - grip) * scale
 	root.set_meta("muzzle", Vector3(0, m.y, -m.x))
 	root.set_meta("length", (sh.muzzle.x) * scale)
+	# Avec un viseur, l'œil se place sur sa ligne de visée (pas au-dessus de son cadre).
+	if float(sh.sight) > -50.0:
+		top = (float(sh.sight) - grip.y) * scale - 0.018
 	root.set_meta("top", top)
 	return root
 

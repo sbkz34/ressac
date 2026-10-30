@@ -1216,12 +1216,12 @@ class Vitals:
 		if w.is_empty():
 			_text(font, Vector2(ax, y + 14), "Mains nues", 18, Color(1, 1, 1, 0.7))
 			return
-		var a := Armes.info(w.id)
+		var a := Armes.de(w)
 		var col: Color = Armes.RARETES[int(w.rarete)].couleur
 		_text(font, Vector2(ax, y + 2), String(a.nom), 16, col)
 		var mag := int(w.chargeur)
 		var res := int(arsenal.reserve[a.munition])
-		var mag_col := Color(1, 1, 1) if mag > Armes.taille_chargeur(w.id, int(w.rarete)) / 4 else Color(1, 0.45, 0.35)
+		var mag_col := Color(1, 1, 1) if mag > Armes.chargeur_de(w) / 4 else Color(1, 0.45, 0.35)
 		_text(font, Vector2(ax, y + 30), "%d" % mag, 28, mag_col)
 		_text(font, Vector2(ax + 16 + 16 * str(mag).length(), y + 30), "/ %d" % res, 18, Color(1, 1, 1, 0.75))
 		if arsenal.reloading:
