@@ -19,6 +19,7 @@ var _kick_rot := 0.0
 var _bob := 0.0
 var _sway := Vector2.ZERO
 var _flash_t := 0.0
+var shown := ""           # clé de l'arme affichée
 var _land := 0.0          # creux à la réception d'un saut ou d'une chute
 var _land_v := 0.0
 var _roll_kick := 0.0     # recul : petite rotation de côté
@@ -113,7 +114,20 @@ func _box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) -> MeshIns
 	return mi
 
 
+## Clé de l'arme affichée (modèle, rareté, accessoires, camouflage).
+static func key_of(w: Dictionary) -> String:
+	if w.is_empty():
+		return ""
+	return "%s|%d|%s|%s" % [w.id, int(w.get("rarete", 0)), ",".join(PackedStringArray(w.get("acc", []))), Progression.camo(String(w.id))]
+
+
+## Vrai quand aucune animation ne doit encore changer l'arme affichée.
+func settled() -> bool:
+	return not _pending_set and _anim != "swap"
+
+
 func _build(w: Dictionary) -> void:
+	shown = key_of(w)
 	if _gun:
 		_gun.queue_free()
 		_gun = null
@@ -199,6 +213,10 @@ func set_loaded(on: bool) -> void:
 
 func set_weapon(w: Dictionary, animate := true) -> void:
 	if not animate or _gun == null:
+		# Une arme posée directement annule un changement d'arme en cours (sinon l'ancienne
+		# reviendrait à la fin de l'animation, par exemple après une mort et un redéploiement).
+		_pending_set = false
+		_pending_weapon = {}
 		_build(w)
 		_anim = ""
 		return

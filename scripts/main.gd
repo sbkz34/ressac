@@ -1112,6 +1112,21 @@ func _check_manette() -> void:
 	if err[1] > err[0] * 0.75:
 		_fail("assistance rotationnelle : écart %.2f° sans, %.2f° avec" % [err[0], err[1]])
 	G.input_mode = "kbm"
+	# Redéploiement pendant un changement d'arme : l'arme affichée est bien le P9.
+	var arv := player.arsenal
+	arv.slots = [Armes.nouvelle("faucon", 3), Armes.nouvelle("vipere", 2)]
+	arv.cur = 0
+	arv.view.set_weapon(arv.current(), false)
+	arv.view.set_weapon(arv.other(), true)
+	await _wait(0.1)
+	arv.starting_kit()
+	await _wait(0.8)
+	if arv.view.shown != WeaponView.key_of(arv.current()) or arv.current().id != "p9":
+		_fail("redéploiement : arme affichée %s au lieu du P9" % arv.view.shown)
+	arv.view._build(Armes.nouvelle("titan", 3))
+	await _wait(0.2)
+	if arv.view.shown != WeaponView.key_of(arv.current()):
+		_fail("arme affichée pas resynchronisée (%s)" % arv.view.shown)
 	print("[check] manette : %.0f puis %.0f °/s au bord, écart en strafant %.1f° sans assistance, %.1f° avec" % [rad_to_deg(early), rad_to_deg(late), err[0], err[1]])
 
 

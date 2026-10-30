@@ -675,3 +675,6 @@ func _process(delta: float) -> void:
 		view.update_view(delta, joueur.hspeed, joueur.sprinting, joueur.is_on_floor())
 		var w := current()
 		view.hidden_by_scope = not w.is_empty() and (w.id == "aiguille" or w.get("acc", []).has("lunette")) and ads > 0.9
+		# Filet de sécurité : l'arme affichée est toujours celle qu'on a en main.
+		if not is_bot and view.settled() and view.shown != WeaponView.key_of(w):
+			view.set_weapon(w, false)

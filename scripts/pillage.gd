@@ -4,7 +4,7 @@ extends Node3D
 ## (emplacements relevés par l'île), coffres, et le champ de tir de la Batterie. Plus un lieu a
 ## d'étoiles (`butin` dans data/ile.json), plus il est rempli et plus ses armes sont rares.
 
-const REMPLISSAGE := {1: 0.5, 2: 0.65, 3: 0.8}
+const REMPLISSAGE := {1: 0.7, 2: 0.82, 3: 0.95}
 const COFFRES := {1: 1, 2: 2, 3: 3}
 ## Chances de rareté (commune, rare, épique, légendaire) selon les étoiles du lieu.
 const RARETE_PAR_ETOILES := {
@@ -69,20 +69,22 @@ func spawn_weapon(w: Dictionary, pos: Vector3, with_ammo := true) -> void:
 	if with_ammo:
 		var kind: String = Armes.info(w.id).munition
 		var side := Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(0.35, 0.6))
-		spawn(Butin.make_munitions(kind, int(Armes.MUNITIONS[kind].lot)), pos + side, rng.randf() * TAU)
+		spawn(Butin.make_munitions(kind, int(Armes.MUNITIONS[kind].lot) * 2), pos + side, rng.randf() * TAU)
 
 
 func _random_item(pos: Vector3, stars: int) -> void:
+	# Armes 28 %, munitions 36 % (souvent un double lot), plaques 14 %, argent 22 %.
 	var r := rng.randf()
-	if r < 0.36:
+	if r < 0.28:
 		spawn_weapon(random_weapon(stars), pos)
-	elif r < 0.68:
+	elif r < 0.64:
 		var kind := random_ammo_kind()
-		spawn(Butin.make_munitions(kind, int(Armes.MUNITIONS[kind].lot)), pos, rng.randf() * TAU)
-	elif r < 0.86:
+		var lots := 2 if rng.randf() < 0.45 else 1
+		spawn(Butin.make_munitions(kind, int(Armes.MUNITIONS[kind].lot) * lots), pos, rng.randf() * TAU)
+	elif r < 0.78:
 		spawn(Butin.make_plaque(1 if rng.randf() < 0.75 else 3), pos, rng.randf() * TAU)
 	else:
-		spawn(Butin.make_argent(rng.randi_range(2, 8) * 50 * stars), pos, rng.randf() * TAU)
+		spawn(Butin.make_argent(rng.randi_range(3, 10) * 50 * stars), pos, rng.randf() * TAU)
 
 
 ## Vide l'île (nouvelle partie).
@@ -195,9 +197,11 @@ func _on_chest_opened(c: Coffre) -> void:
 	var base := c.global_position + front * 0.9
 	spawn_weapon(random_weapon(4), base)
 	spawn(Butin.make_plaque(rng.randi_range(1, 2)), base + right * 0.7, rng.randf() * TAU)
-	spawn(Butin.make_argent(rng.randi_range(4, 10) * 50), base - right * 0.7, rng.randf() * TAU)
+	spawn(Butin.make_argent(rng.randi_range(8, 16) * 50), base - right * 0.7, rng.randf() * TAU)
 	var kind := random_ammo_kind()
-	spawn(Butin.make_munitions(kind, int(Armes.MUNITIONS[kind].lot)), base + front * 0.5, rng.randf() * TAU)
+	spawn(Butin.make_munitions(kind, int(Armes.MUNITIONS[kind].lot) * 2), base + front * 0.5, rng.randf() * TAU)
+	var kind2 := random_ammo_kind()
+	spawn(Butin.make_munitions(kind2, int(Armes.MUNITIONS[kind2].lot)), base - front * 0.1 + right * 1.2, rng.randf() * TAU)
 
 
 # ------------------------------------------------------------------------------------------------
