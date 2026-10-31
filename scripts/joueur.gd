@@ -698,7 +698,7 @@ func _footsteps(delta: float) -> void:
 				vol = -14.0
 			elif posture == Posture.ACCROUPI:
 				vol = -25.0
-			_snd("pas_%s_%d" % [_floor_kind, randi_range(1, 4)], vol, randf_range(0.92, 1.08))
+			_snd("pas_%s_%d" % [_floor_kind, randi_range(1, 4)], vol + Meteo.pas_db(), randf_range(0.92, 1.08))
 
 
 func _end_tac() -> void:

@@ -33,6 +33,7 @@ signal announce(titre: String, sous_titre: String)   # grandes annonces (Brume, 
 
 ## Dégâts échangés : duel[[attaquant, victime]] = {"degats", "touches"} (vie en cours du joueur).
 var duel := {}
+var meteo: Meteo
 var aerien: Coffre
 var _annonces := {}
 var stats := {}
@@ -61,6 +62,10 @@ func setup(p: Joueur, pl: Pillage, i: Ile) -> void:
 		announce.emit("LA BRUME AVANCE", "Phase %d / %d" % [n, Brume.PHASES.size()]))
 	brume.closed.connect(_on_closed)
 	add_combatant(player)
+	meteo = Meteo.new()
+	meteo.name = "Meteo"
+	add_child(meteo)
+	meteo.setup(self, ile)
 	contrats = Contrats.new()
 	contrats.name = "Contrats"
 	add_child(contrats)
@@ -93,6 +98,11 @@ func start(seed_value: int) -> void:
 	_coffres0 = player.arsenal.coffres_ouverts
 	_tyro0 = player.tyroliennes
 	brume.start(seed_value)
+	meteo.tirer(seed_value)
+	if meteo.type == "brouillard":
+		announce.emit("BROUILLARD MARIN", "Il se lèvera vers la phase 3")
+	elif meteo.type == "pluie":
+		message.emit("Météo : averse prévue en cours de partie")
 	contrats.setup(self)
 	contrats.spawn_tablettes()
 	message.emit("Fin de partie prévue : %s" % brume.final_place)
@@ -361,6 +371,7 @@ func _serie(id: String) -> void:
 
 func stop() -> void:
 	Boutique.series = Callable()
+	meteo.restaurer()
 	if running and time > 1.0:
 		stats.place = 0          # partie quittée : pas de classement
 		_compter(false)

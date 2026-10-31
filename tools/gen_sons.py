@@ -4,7 +4,7 @@
 Pas sur la terre, sur un sol dur et dans l'eau (plusieurs variantes, plus naturels que l'ancien
 « step »), vent de chute libre et sous la voile, ouverture du parachute, sortie de l'avion, moteur
 de l'avion, entrée dans l'eau et brasse, marqueurs de touche (corps, tête, armure, armure brisée),
-battements de cœur quand on est à bout de forces, tyrolienne, ouverture de coffre, annonce, musique de fin de partie.
+battements de cœur quand on est à bout de forces, tyrolienne, ouverture de coffre, annonce, musique de fin de partie, pluie.
 
     python3 tools/gen_sons.py        → assets/sfx/*.wav
 """
@@ -280,3 +280,10 @@ pad = sum(np.sin(2 * np.pi * f * tt + k) for k, f in enumerate([293.66, 349.23, 
 pad = low(pad, 1800) * (0.5 + 0.5 * np.sin(2 * np.pi * tt / (8 * beat))) * 0.07
 mus += pad
 write("musique_fin.wav", mus, peak=0.7, fade=False)
+
+# Pluie (boucle de 6 s) : souffle large, crépitement de gouttes, quelques gouttes plus lourdes.
+d = 6.0
+wash = band(white(d + 0.25), 400, 7000) * 0.5 + low(white(d + 0.25), 500) * 0.4
+patter = grains(d + 0.25, 2600, 2000, 9000, 0.3, 1.2) * 0.35
+heavy = grains(d + 0.25, 140, 600, 2500, 1.5, 3.0) * 0.3
+write("pluie.wav", loopable(wash + patter + heavy), peak=0.55, fade=False)

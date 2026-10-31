@@ -442,7 +442,7 @@ func _valid_target(t: Node3D) -> bool:
 
 
 func _perceive() -> void:
-	var sight: float = SIGHT[level]
+	var sight: float = minf(SIGHT[level], partie.meteo.portee_vue()) if partie and partie.meteo else float(SIGHT[level])
 	var eye := _eye()
 	var fwd := -j.cam.global_basis.z
 	var best: Node3D = null
@@ -480,7 +480,7 @@ func _perceive() -> void:
 
 func _engage_range() -> float:
 	var w := j.arsenal.current()
-	var sight: float = SIGHT[level]
+	var sight: float = minf(SIGHT[level], partie.meteo.portee_vue()) if partie and partie.meteo else float(SIGHT[level])
 	if weapon_score(w) >= 2.5 or weapon_score(j.arsenal.other()) >= 2.5:
 		return sight
 	return minf(sight, 12.0)

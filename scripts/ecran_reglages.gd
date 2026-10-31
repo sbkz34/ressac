@@ -207,6 +207,8 @@ func _affichage() -> void:
 	_choice("Images par seconde", "Compteur à côté de la mini-carte.", "show_fps", [true, false], ["Affichées", "Masquées"])
 	_choice("Mesures de performances", "Temps de calcul (processeur, carte graphique), appels de dessin, triangles.", "mesures", [false, true], ["Masquées", "Affichées"])
 	_choice("Mini-carte", "Elle tourne avec la vue, ou le nord reste en haut.", "minicarte_nord", [false, true], ["Tourne avec la vue", "Nord en haut"])
+	_choice("Météo", "Aléatoire : pluie, orage ou brouillard marin certaines parties. Le soleil se couche toujours.", "meteo",
+		["aleatoire", "beau"], ["Aléatoire", "Toujours beau temps"])
 
 
 func _commandes() -> void:

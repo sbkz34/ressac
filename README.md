@@ -110,6 +110,23 @@ chercher le coffre ou guetter un moment, puis redescendent.
 |---|---|
 | ![Annonce et sons à l'écran](docs/captures/51_annonce.jpg) | |
 
+### Météo
+
+Le **soleil se couche** au fil de la partie : lumière dorée, puis orangée ; le dernier cercle se
+joue au crépuscule, quand le **phare** s'allume et balaie l'île de son faisceau. Certaines parties
+ajoutent (tirage au sort, réglable « Toujours beau temps » dans Réglages › Affichage) :
+
+- une **averse** (souvent un **orage**, éclairs et tonnerre) qui arrive en cours de partie puis
+  passe : ciel gris, pluie autour de soi, bruit de pluie ; les pas s'entendent moins loin (et
+  leurs arcs à l'écran aussi) et les bots voient moins loin ;
+- un **brouillard marin** au départ, très épais, qui se lève vers la phase 3 : début de partie au
+  corps à corps ; les bots y voient aussi mal que vous.
+
+| | |
+|---|---|
+| ![Brouillard marin](docs/captures/53_brouillard.jpg) | ![Averse](docs/captures/54_pluie.jpg) |
+| ![Coucher de soleil](docs/captures/55_coucher_soleil.jpg) | ![Crépuscule et phare](docs/captures/56_crepuscule.jpg) |
+
 ### Caméra de la mort et ressenti des armes
 
 Éliminé, on **suit celui qui vous a eu**, par-dessus son épaule, pendant l'attente du

@@ -1557,7 +1557,7 @@ class Crosshair:
 			if o == null or o == j or o.sante.dead or o.etat != Joueur.Etat.SOL or o.hspeed < 2.6 or o.posture != Joueur.Posture.DEBOUT:
 				continue
 			var d := o.global_position.distance_to(p)
-			var reach := 30.0 if o.sprinting else 20.0
+			var reach := (30.0 if o.sprinting else 20.0) * Meteo.pas_portee()
 			if d < reach:
 				_sons.append([o.global_position, "pas", 1.0 - d / reach])
 		for sh in G.recent_shots():

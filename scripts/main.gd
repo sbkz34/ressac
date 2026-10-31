@@ -1457,6 +1457,54 @@ func _check_tyroliennes() -> String:
 	return "tyrolienne en %.1f s, bot au sommet en %.1f s" % [t_up, t_bot]
 
 
+func _check_meteo() -> String:
+	var fog0 := ile.env.fog_density
+	var sun0 := ile.sun.rotation_degrees
+	await start_partie(0)
+	partie.brume.time_scale = 0.0
+	var m := partie.meteo
+	# Brouillard marin au départ, levé vers la phase 3.
+	m.tirer(7, "brouillard")
+	await _wait(0.2)
+	if ile.env.fog_density < 0.02 or m.portee_vue() > 150.0:
+		_fail("brouillard : densité %.4f, vue %.0f m" % [ile.env.fog_density, m.portee_vue()])
+	m.avancement = 0.5
+	await _wait(0.2)
+	if ile.env.fog_density > fog0 + 0.001:
+		_fail("brouillard : pas levé (%.4f)" % ile.env.fog_density)
+	# Pluie : elle arrive, couvre les pas, réduit la vue ; elle passe.
+	m.tirer(7, "pluie")
+	m._pluie_debut = 0.0
+	m._pluie_fin = 0.9
+	m.avancement = 0.1
+	await _until(func(): return m.pluie > 0.5, 20.0)
+	if not m._gouttes.emitting or Meteo.pas_portee() > 0.8 or Meteo.pas_db() > -4.0 or not m._bruit.playing:
+		_fail("pluie : gouttes %s, pas %.2f, son %s" % [m._gouttes.emitting, Meteo.pas_portee(), m._bruit.playing])
+	m.avancement = 0.95
+	await _until(func(): return m.pluie < 0.02, 30.0)
+	# Crépuscule : soleil bas, le phare balaie l'île.
+	await _wait(0.2)
+	if ile.sun.rotation_degrees.x < -4.0 or not m._faisceau.visible:
+		_fail("crépuscule : soleil à %.1f°, phare %s" % [-ile.sun.rotation_degrees.x, m._faisceau.visible])
+	# Réglage « toujours beau temps ».
+	G.settings.meteo = "beau"
+	m.tirer(123)
+	if m.type != "beau":
+		_fail("météo forcée au beau temps : %s" % m.type)
+	G.settings.meteo = "aleatoire"
+	var seen := {}
+	for k in 30:
+		m.tirer(k * 13)
+		seen[m.type] = true
+	if seen.size() != 3:
+		_fail("météo : tirages %s" % [seen.keys()])
+	_end_partie()
+	await _wait(0.1)
+	if absf(ile.env.fog_density - fog0) > 0.0001 or ile.sun.rotation_degrees != sun0 or Meteo.courante != null:
+		_fail("météo : pas restaurée après la partie")
+	return "météo : brouillard, pluie, crépuscule"
+
+
 func _check_rythme() -> String:
 	await start_partie(2, 1)
 	partie.brume.time_scale = 0.0
@@ -1768,6 +1816,8 @@ func _check_bots() -> String:
 	# Rythme : bonus de redéploiement, argent des éliminations, ravitaillement aérien, annonces,
 	# musique, sons à l'écran, résumé du duel.
 	out.append(await _check_rythme())
+	# Météo : coucher de soleil, pluie, brouillard, retour à la normale.
+	out.append(await _check_meteo())
 	# Contrats et séries.
 	out.append(await _check_contrats())
 	# Tyroliennes.
@@ -2337,6 +2387,34 @@ func _tour() -> void:
 	await _wait(0.3)
 	await _shot(dir, "50b_franchissement", 1)
 	await _wait(0.6)
+	# Météo : brouillard marin, averse, coucher de soleil, crépuscule (le phare balaie l'île).
+	var mt := partie.meteo
+	var tzm: Tyrolienne = ile.tyroliennes[0]
+	player.spawn_at(tzm.haut + Vector3(0, 0.1, 0), 0.0)
+	player.look_at_point(Vector3(-150, 5, -40))
+	mt.tirer(5, "brouillard")
+	mt.avancement = 0.05
+	await _wait(0.4)
+	await _shot(dir, "53_brouillard")
+	mt.tirer(5, "pluie")
+	mt._pluie_debut = 0.0
+	mt.avancement = 0.3
+	mt.pluie = 1.0
+	await _wait(0.8)
+	await _shot(dir, "54_pluie")
+	mt.tirer(5, "beau")
+	mt.avancement = 0.84
+	await _wait(0.4)
+	await _shot(dir, "55_coucher_soleil")
+	mt.avancement = 1.0
+	var bat := Vector3(-150, 0, -100)
+	player.spawn_at(Vector3(bat.x, ile.ground_at(bat.x, bat.z) + 0.1, bat.z), 0.0)
+	player.look_at_point(ile.lantern.global_position + Vector3(0, 26, 0))
+	await _wait(1.2)
+	await _shot(dir, "56_crepuscule")
+	mt.tirer(5, "beau")
+	mt.avancement = 0.1
+	await _wait(0.2)
 	# Caméra de la mort : un bot vous élimine, on le suit.
 	var kb := bots[1]
 	kb.arsenal.slots = [Armes.nouvelle("faucon", 2), {}]

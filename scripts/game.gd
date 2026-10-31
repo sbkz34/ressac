@@ -34,7 +34,8 @@ var settings := {
 	"sens_vert": 0.85,          # sensibilité verticale (par rapport à l'horizontale)
 	"accel_pad": true,          # accélération quand le stick droit est poussé à fond
 	"vibrations": true,
-	"sons_visuels": true,       # indicateurs visuels des pas et des tirs autour du réticule
+	"sons_visuels": true,
+	"meteo": "aleatoire",      # aleatoire ou beau       # indicateurs visuels des pas et des tirs autour du réticule
 	"bots": 15,             # adversaires dans une partie (0 à 23)
 	"difficulte": 1,        # 0 facile, 1 normal, 2 difficile
 	"qualite": 1,           # 0 performance, 1 équilibrée, 2 qualité (résolution 3D, ombres)
@@ -401,7 +402,7 @@ static func bus_of(name: String) -> String:
 	if name.begins_with("marque_") or name in ["killmarker", "hitmarker", "buy", "denied", "armure_brisee", "coeur",
 			"powerup_pick", "box", "perk", "round_start", "round_end"]:
 		return "Interface"
-	if name.begins_with("vent_") or name in ["moteur_avion", "voile", "sortie_avion", "decoy", "ambient", "thunder", "musique_fin", "annonce"]:
+	if name.begins_with("vent_") or name in ["moteur_avion", "voile", "sortie_avion", "decoy", "ambient", "thunder", "musique_fin", "annonce", "pluie"]:
 		return "Ambiance"
 	return "Armes"
 
