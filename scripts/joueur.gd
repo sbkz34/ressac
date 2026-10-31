@@ -125,6 +125,7 @@ var _steady := 0.0
 var _snap := Vector2.ZERO     # rotation (degrés) encore à appliquer : assistance, recul
 var _hb_on := true
 var _y_t := -1.0               # Y maintenu depuis (négatif : relâché)
+var plate_latch := false       # pose des plaques lancée par Y maintenu (continue sans tenir Y)
 var _ads_toggle := false
 const HOLD_PLATE := 0.25       # au-delà, Y pose des plaques au lieu de changer d'arme
 var _floor_kind := "terre"     # sol sous les pieds : "terre", "dur" ou "eau" (bruit des pas)
@@ -403,18 +404,29 @@ func _process(delta: float) -> void:
 	i.use = i.use or Input.is_action_just_pressed("use")
 	i.use_held = Input.is_action_pressed("use")
 	i.plate_held = Input.is_action_pressed("plate")
-	# Y : appui bref = changer d'arme (au relâchement), maintenu = poser des plaques.
+	# Y : appui bref = changer d'arme (au relâchement) ; maintenu un instant = lance la pose des
+	# plaques, qui continue toute seule (on peut lâcher) ; un nouvel appui pendant la pose l'annule.
 	if Input.is_action_just_pressed("arme_plaque"):
-		_y_t = 0.0
+		if plate_latch:
+			plate_latch = false
+			_y_t = -2.0           # cet appui ne sert qu'à annuler (pas de changement d'arme)
+		else:
+			_y_t = 0.0
 	if _y_t >= 0.0:
 		if Input.is_action_pressed("arme_plaque"):
 			_y_t += delta
 			if _y_t >= HOLD_PLATE:
-				i.plate_held = true
+				plate_latch = arsenal.can_plate()
+				_y_t = -2.0
 		else:
 			if _y_t < HOLD_PLATE:
 				i.swap = true
 			_y_t = -1.0
+	elif _y_t <= -2.0 and not Input.is_action_pressed("arme_plaque"):
+		_y_t = -1.0
+	if plate_latch and not arsenal.plating_wanted():
+		plate_latch = false
+	i.plate_held = i.plate_held or plate_latch
 	i.lethal = i.lethal or Input.is_action_just_pressed("lethal")
 	i.tactical = i.tactical or Input.is_action_just_pressed("tactical")
 	if touch and touch.visible:

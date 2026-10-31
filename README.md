@@ -162,9 +162,12 @@ dans les jauges. Les armes trouvées en portent selon leur rareté (rare 2, épi
 les armes de classe ceux choisis à l'**armurier** (aperçu 3D et comparaison en direct). Ils se
 voient sur les armes, en main, au sol et chez les bots.
 
-Manette : **Y appuyé** change d'arme, **Y maintenu** pose des plaques (la croix haut aussi).
-**X appuyé** recharge (ou ouvre un coffre, une station, une tablette, une tyrolienne), **X maintenu**
-ramasse l'arme au sol devant soi : une arme par terre n'empêche plus de recharger.
+Manette : **Y appuyé** change d'arme ; **Y maintenu** un instant lance la pose des plaques, qui
+continue toute seule jusqu'à l'armure pleine (on peut lâcher Y) ; un nouvel appui sur Y l'annule.
+La croix haut pose des plaques tant qu'on la maintient.
+**X** : l'interaction a la priorité (ramasser, ouvrir, acheter…). Seule exception : si l'arme en
+main a besoin d'être rechargée et qu'une arme est au sol devant soi, X appuyé recharge et
+**X maintenu** ramasse.
 
 Mort et redéploiement : le sac laissé au sol contient toujours au moins une plaque (une
 élimination rapporte de quoi se refaire), jamais le P9 de départ, et disparaît au bout de 2 min.

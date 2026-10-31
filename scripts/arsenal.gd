@@ -96,6 +96,17 @@ func has_perk(id: String) -> bool:
 	return perks.has(id)
 
 
+## On peut commencer à poser une plaque.
+func can_plate() -> bool:
+	return plates > 0 and sante.armor < sante.armor_max - 0.01 and not sante.dead
+
+
+## La pose lancée par Y doit continuer : il reste des plaques et de la place (et, en mode « une
+## par appui », la plaque n'est pas encore posée).
+func plating_wanted() -> bool:
+	return can_plate() and not _plate_wait
+
+
 func plate_time() -> float:
 	return PLATE_TIME * (0.5 if has_perk("fixation") else 1.0)
 
@@ -241,7 +252,8 @@ func simulate(i: Intentions, delta: float) -> void:
 		_use_t += delta
 	elif not i.use_held:
 		_use_t = -1.0
-	var weapon_here := target_item is Butin
+	# Maintenir n'est nécessaire que si l'arme en main a besoin d'être rechargée (sinon X ramasse).
+	var weapon_here := target_item is Butin and needs_reload()
 	if i.interact and target_item:
 		_interact(target_item)
 	elif i.use and target_item and not weapon_here:
@@ -274,6 +286,8 @@ func simulate(i: Intentions, delta: float) -> void:
 	# Une plaque par appui (réglage) : il faut relâcher avant la suivante.
 	if not i.plate_held:
 		_plate_wait = false
+		if plate_t > 0.0:
+			view.stop_anim()      # pose annulée
 	if i.plate_held and not _plate_wait and plates > 0 and sante.armor < sante.armor_max - 0.01 and (allowed or joueur.etat == Joueur.Etat.SOL):
 		if plate_t <= 0.0:
 			reloading = false
@@ -426,6 +440,14 @@ func _ray(origin: Vector3, dir: Vector3) -> Dictionary:
 	var q := PhysicsRayQueryParameters3D.create(origin, origin + dir * RANGE, G.L_WORLD | G.L_HITBOX, _exclude)
 	q.collide_with_areas = true
 	return joueur.get_world_3d().direct_space_state.intersect_ray(q)
+
+
+## L'arme en main n'a pas un chargeur plein et il reste des munitions pour elle.
+func needs_reload() -> bool:
+	var w := current()
+	if w.is_empty():
+		return false
+	return int(w.chargeur) < Armes.chargeur_de(w) and int(reserve[Armes.de(w).munition]) > 0
 
 
 func start_reload() -> void:

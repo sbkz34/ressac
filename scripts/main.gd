@@ -891,6 +891,7 @@ func _check() -> void:
 	await _wait(0.2)
 	if player.sante.armor < armor0 + 49.0 or ar2.cur != 0:
 		_fail("Y maintenu : armure %.0f → %.0f, arme %d" % [armor0, player.sante.armor, ar2.cur])
+	await _until(func(): return not player.plate_latch, 6.0)   # la pose continue jusqu'au bout
 	Input.action_press("arme_plaque")
 	await _wait(0.08)
 	Input.action_release("arme_plaque")
@@ -1184,7 +1185,39 @@ func _check_ramasser() -> void:
 	await _wait(0.1)
 	if pillage.items.has(gun) or ar.current().id != "vipere":
 		_fail("X maintenu : arme pas ramassée (%s)" % ar.current().id)
+	# Chargeur plein : l'interaction a la priorité, un appui bref ramasse.
+	ar.slots = [Armes.nouvelle("faucon", 0, []), {}]
+	ar.cur = 0
+	ar.view.set_weapon(ar.current(), false)
+	var gun2 := pillage.spawn(Butin.make_arme(Armes.nouvelle("k14", 1, [])), player.global_position + Vector3(fwd.x, 0, fwd.z) * 1.0 + Vector3(0, 0.05, 0))
+	player.look_at_point(gun2.global_position)
+	await _wait(0.3)
+	player.scripted.use = true
+	player.scripted.use_held = true
+	await _wait(0.05)
+	player.scripted.use_held = false
+	await _wait(0.1)
+	if pillage.items.has(gun2):
+		_fail("X bref chargeur plein : arme pas ramassée")
 	player.scripted = null
+	# Y maintenu : la pose des plaques continue sans tenir Y ; un appui l'annule (sans changer d'arme).
+	ar.slots = [Armes.nouvelle("faucon", 0, []), Armes.nouvelle("p9", 0)]
+	ar.cur = 0
+	ar.plates = 3
+	player.sante.reset(0)
+	await _wait(0.2)
+	Input.action_press("arme_plaque")
+	await _wait(Joueur.HOLD_PLATE + 0.1)
+	Input.action_release("arme_plaque")
+	await _wait(ar.plate_time() * 2.0 + 0.3)
+	if ar.plates != 1 or not player.plate_latch or ar.cur != 0:
+		_fail("Y maintenu puis lâché : %d plaques restantes, pose %s, arme %d" % [ar.plates, player.plate_latch, ar.cur])
+	Input.action_press("arme_plaque")
+	await _wait(0.05)
+	Input.action_release("arme_plaque")
+	await _wait(ar.plate_time() + 0.3)
+	if ar.plates != 1 or player.plate_latch or ar.cur != 0:
+		_fail("Y pendant la pose : pas annulée (%d plaques, arme %d)" % [ar.plates, ar.cur])
 	var finals := []
 	for k in 12:
 		var br := Brume.new()

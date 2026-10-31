@@ -1186,6 +1186,8 @@ func _process(delta: float) -> void:
 			if _window_ok:
 				st = "FENÊTRE — %s : franchir" % key_name("jump")
 				tl["saut"] = "FRANCHIR"
+			if player.plate_latch:
+				st = "PLAQUES — %s : annuler" % G.binding_name("arme_plaque", true)
 	_state.text = st
 	var a := player.arsenal
 	# Brume, réapparition, voile toxique.
@@ -1213,7 +1215,7 @@ func _process(delta: float) -> void:
 	if a.target_item:
 		tl["action"] = "OUVRIR" if a.target_item is Coffre else "PRENDRE"
 		var k := key_name("interact")
-		if G.input_mode == "pad" and a.target_item is Butin:
+		if G.input_mode == "pad" and a.target_item is Butin and a.needs_reload():
 			k = "Maintenir %s" % k
 			if a._use_t > 0.0 and not a._use_done:
 				k += " " + "▮".repeat(int(clampf(a._use_t / Arsenal.USE_HOLD, 0.0, 1.0) * 5.0)) + "▯".repeat(5 - int(clampf(a._use_t / Arsenal.USE_HOLD, 0.0, 1.0) * 5.0))

@@ -39,5 +39,9 @@ func settled() -> bool:
 	return true
 
 
+func stop_anim() -> void:
+	pass
+
+
 func muzzle_global(_left := false) -> Vector3:
 	return global_position - global_basis.z * 0.6 + Vector3(0, -0.15, 0)

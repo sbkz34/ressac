@@ -225,6 +225,12 @@ func set_weapon(w: Dictionary, animate := true) -> void:
 	play_anim("swap", 0.5)
 
 
+## Arrête une animation sans changement d'arme en attente (plaque annulée).
+func stop_anim() -> void:
+	if _anim == "swap" and not _pending_set:
+		_anim = ""
+
+
 func play_anim(name: String, length: float) -> void:
 	_reset_parts()
 	_anim = name
